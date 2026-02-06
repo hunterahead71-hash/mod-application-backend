@@ -55,7 +55,17 @@ app.get("/auth/discord/callback", async (req, res) => {
   });
 
   req.session.user = userRes.data;
-  res.redirect(process.env.FRONTEND_URL);
+
+  const adminIds = process.env.ADMIN_IDS.split(",");
+
+  if (adminIds.includes(userRes.data.id)) {
+  // Admin → go to admin dashboard
+    res.redirect("/admin");
+  } else {
+  // Normal user → go to website
+    res.redirect(process.env.FRONTEND_URL);
+  }
+
 });
 
 /* ================= APPLICATION ================= */
