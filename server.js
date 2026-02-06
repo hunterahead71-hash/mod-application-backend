@@ -77,21 +77,29 @@ app.get("/auth/discord/callback", async (req, res) => {
 
 /* ================= APPLICATION ================= */
 
-app.post("/apply", (req, res) => {
+app.post("/apply", async (req, res) => {
   if (!req.session.user) {
     return res.status(401).json({ error: "Not authenticated" });
   }
 
-  applications.push({
-    id: Date.now(),
-    user: req.session.user,
-    answers: req.body.answers,
-    score: req.body.score,
+  const { answers, score } = req.body;
+
+  const { error } = await supabase.from("applications").insert({
+    discord_id: req.session.user.id,
+    discord_username: req.session.user.username,
+    answers,
+    score,
     status: "pending"
   });
 
+  if (error) {
+    console.error(error);
+    return res.status(500).json({ error: "Database error" });
+  }
+
   res.json({ success: true });
 });
+
 
 /* ================= ADMIN ================= */
 
