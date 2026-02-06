@@ -141,18 +141,15 @@ app.post("/admin/reject/:id", async (req, res) => {
   res.redirect("/admin");
 });
 app.get("/admin", async (req, res) => {
-  // 1. Must be logged in
   if (!req.session.user) {
     return res.status(401).send("Not logged in");
   }
 
-  // 2. Must be admin
   const adminIds = process.env.ADMIN_IDS.split(",");
   if (!adminIds.includes(req.session.user.id)) {
     return res.status(403).send("Forbidden");
   }
 
-  // 3. Fetch applications
   const { data, error } = await supabase
     .from("applications")
     .select("*")
@@ -163,26 +160,38 @@ app.get("/admin", async (req, res) => {
     return res.status(500).send("Database error");
   }
 
-  // 4. Render simple admin UI
-  let html = `<h1>Admin Dashboard</h1>`;
+  let html = `
+    <h1>Admin Dashboard</h1>
+    <p>Total Applications: ${data.length}</p>
+    <hr/>
+  `;
+
+  if (data.length === 0) {
+    html += `<p>No applications yet.</p>`;
+  }
 
   data.forEach(app => {
     html += `
-      <div style="border:1px solid #ccc;padding:10px;margin:10px">
-        <strong>${app.discord_username}</strong><br/>
-        Discord ID: ${app.discord_id}<br/>
-        Score: ${app.score}<br/>
-        Status: ${app.status}<br/>
-        <pre>${JSON.stringify(app.answers, null, 2)}</pre>
+      <div style="border:1px solid #ccc;padding:15px;margin:15px">
+        <b>Discord Username:</b> ${app.discord_username}<br/>
+        <b>Discord ID:</b> ${app.discord_id}<br/>
+        <b>Score:</b> ${app.score}<br/>
+        <b>Status:</b> ${app.status}<br/>
+
+        <details>
+          <summary>View Answers</summary>
+          <pre>${JSON.stringify(app.answers, null, 2)}</pre>
+        </details>
 
         ${
           app.status === "pending"
             ? `
-              <form method="POST" action="/admin/accept/${app.id}">
-                <button>Accept</button>
+              <form method="POST" action="/admin/accept/${app.id}" style="display:inline">
+                <button type="submit">✅ Accept</button>
               </form>
-              <form method="POST" action="/admin/reject/${app.id}">
-                <button>Reject</button>
+
+              <form method="POST" action="/admin/reject/${app.id}" style="display:inline">
+                <button type="submit">❌ Reject</button>
               </form>
             `
             : ""
@@ -193,6 +202,7 @@ app.get("/admin", async (req, res) => {
 
   res.send(html);
 });
+
 
 
 /* ================= START ================= */
