@@ -143,6 +143,9 @@ app.post("/admin/reject/:id", async (req, res) => {
 
 
 /* ================= START ================= */
+app.get("/__test", (req, res) => {
+  res.send("SERVER ROUTES ARE ACTIVE");
+});
 
 app.listen(3000, () => {
   console.log("Server running on port 3000");
