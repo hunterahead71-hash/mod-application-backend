@@ -30,8 +30,6 @@ const bot = new Client({
 
 bot.login(process.env.DISCORD_BOT_TOKEN);
 
-// In-memory storage (FREE & simple)
-const applications = [];
 
 /* ================= DISCORD AUTH ================= */
 
@@ -103,36 +101,46 @@ app.post("/apply", async (req, res) => {
 
 /* ================= ADMIN ================= */
 
-app.get("/admin", (req, res) => {
-  if (!process.env.ADMIN_IDS.split(",").includes(req.session.user?.id)) {
-    return res.status(403).send("Forbidden");
-  }
-  res.json(applications);
-});
-
 app.post("/admin/accept/:id", async (req, res) => {
-  const appId = Number(req.params.id);
-  const application = applications.find(a => a.id === appId);
+  const id = req.params.id;
 
-  if (!application) return res.sendStatus(404);
+  // 1. Get application from Supabase
+  const { data, error } = await supabase
+    .from("applications")
+    .select("*")
+    .eq("id", id)
+    .single();
 
+  if (error || !data) {
+    console.error(error);
+    return res.status(404).send("Application not found");
+  }
+
+  // 2. Give Discord role
   const guild = await bot.guilds.fetch(process.env.GUILD_ID);
-  const member = await guild.members.fetch(application.user.id);
+  const member = await guild.members.fetch(data.discord_id);
   await member.roles.add(process.env.MOD_ROLE_ID);
 
-  application.status = "accepted";
-  res.json({ success: true });
+  // 3. Update status in DB
+  await supabase
+    .from("applications")
+    .update({ status: "accepted" })
+    .eq("id", id);
+
+  // 4. Go back to admin page
+  res.redirect("/admin");
+});
+app.post("/admin/reject/:id", async (req, res) => {
+  const id = req.params.id;
+
+  await supabase
+    .from("applications")
+    .update({ status: "rejected" })
+    .eq("id", id);
+
+  res.redirect("/admin");
 });
 
-app.post("/admin/reject/:id", (req, res) => {
-  const appId = Number(req.params.id);
-  const application = applications.find(a => a.id === appId);
-
-  if (!application) return res.sendStatus(404);
-
-  application.status = "rejected";
-  res.json({ success: true });
-});
 
 /* ================= START ================= */
 
