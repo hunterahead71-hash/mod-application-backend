@@ -215,6 +215,8 @@ app.post("/clear-test-intent", (req, res) => {
 
 app.get("/auth/discord", (req, res) => {
   console.log("Discord auth initiated");
+  console.log("Session testIntent:", req.session.testIntent);
+  
   const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
     process.env.DISCORD_CLIENT_ID
   }&redirect_uri=${encodeURIComponent(
@@ -298,9 +300,13 @@ app.get("/auth/discord/callback", async (req, res) => {
         console.log("User has test intent, redirecting to test");
         req.session.testIntent = false;
         req.session.save(() => {
-          // Redirect to test page with user info
-          const frontendUrl = `https://hunterahead71-hash.github.io/void.training/?startTest=1&discord_username=${encodeURIComponent(userRes.data.username)}&discord_id=${userRes.data.id}`;
-          console.log("Redirecting to:", frontendUrl);
+          // Create authentication token for frontend
+          const authToken = Buffer.from(`${userRes.data.id}:${Date.now()}`).toString('base64');
+          
+          // Redirect to test page with ALL necessary data in URL
+          const frontendUrl = `https://hunterahead71-hash.github.io/void.training/?startTest=1&discord_username=${encodeURIComponent(userRes.data.username)}&discord_id=${userRes.data.id}&auth_token=${authToken}&timestamp=${Date.now()}`;
+          console.log("Redirecting to test:", frontendUrl);
+          
           return res.redirect(frontendUrl);
         });
         return;
@@ -1275,6 +1281,38 @@ app.get("/health", (req, res) => {
   });
 });
 
+/* ================= SIMPLIFIED TEST VERIFICATION ================= */
+
+app.get("/verify-test-access", (req, res) => {
+  console.log("Test access verification called");
+  
+  if (!req.session.user) {
+    console.log("Verify: No user in session");
+    return res.status(401).json({ 
+      authorized: false, 
+      message: "Not authenticated",
+      redirect: "https://mod-application-backend.onrender.com/auth/discord"
+    });
+  }
+  
+  // Check if user has test intent
+  if (req.session.testIntent === "test") {
+    console.log("User has test intent, allowing access");
+    res.json({
+      authorized: true,
+      user: req.session.user,
+      testIntent: req.session.testIntent
+    });
+  } else {
+    console.log("User does not have test intent");
+    res.status(403).json({
+      authorized: false,
+      message: "No test access granted",
+      redirect: "https://hunterahead71-hash.github.io/void.training/"
+    });
+  }
+});
+
 /* ================= START SERVER ================= */
 
 const PORT = process.env.PORT || 3000;
@@ -1284,5 +1322,6 @@ app.listen(PORT, () => {
   console.log(`🍪 Session settings: secure=true, sameSite=none`);
   console.log(`🔧 Debug endpoints: /debug-session, /set-test-session`);
   console.log(`👑 Admin login: /auth/discord`);
-  console.log(`🏥 Health check: /health\n`);
+  console.log(`🏥 Health check: /health`);
+  console.log(`🧪 Test verification: /verify-test-access\n`);
 });
