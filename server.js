@@ -71,8 +71,8 @@ app.use(
     }),
     name: "mod-app-session",
     secret: process.env.SESSION_SECRET || "4d7a9b2f5c8e1a3b6d9f0c2e5a8b1d4f7c0e3a6b9d2f5c8e1a4b7d0c3f6a9b2e5c8f1b4d7e0a3c6b9d2f5e8c1b4a7d0c3f6b9e2c5a8d1b4e7c0a3d6b9e2c5f8",
-    resave: true, // CHANGED TO TRUE
-    saveUninitialized: true, // CHANGED TO TRUE
+    resave: true,
+    saveUninitialized: true,
     proxy: true,
     cookie: {
       secure: true,
@@ -90,7 +90,7 @@ app.use((req, res, next) => {
   console.log('Cookie Header:', req.headers.cookie || 'No cookies');
   console.log('Session ID:', req.sessionID);
   console.log('Session User:', req.session.user || 'No user');
-  console.log('Session Test Intent:', req.session.testIntent || 'No intent');
+  console.log('Session Intent:', req.session.loginIntent || 'No intent');
   console.log('==============================\n');
   next();
 });
@@ -102,16 +102,24 @@ app.get("/debug-session", (req, res) => {
     sessionId: req.sessionID,
     user: req.session.user || 'No user',
     isAdmin: req.session.isAdmin || false,
-    testIntent: req.session.testIntent || 'No intent',
+    loginIntent: req.session.loginIntent || 'No intent',
     cookies: req.headers.cookie || 'No cookies'
   });
 });
 
 /* ================= TEST INTENT - FIXED ================= */
 
+// Store intents in memory as backup
+const pendingIntents = new Map();
+
 app.get("/set-test-intent", (req, res) => {
   console.log("Setting test intent...");
-  req.session.testIntent = "test";
+  req.session.loginIntent = "test";
+  pendingIntents.set(req.sessionID, {
+    intent: "test",
+    timestamp: Date.now()
+  });
+  
   req.session.save((err) => {
     if (err) {
       console.error("Session save error:", err);
@@ -120,30 +128,72 @@ app.get("/set-test-intent", (req, res) => {
     res.json({ 
       success: true, 
       message: "Test intent set",
-      testIntent: req.session.testIntent,
+      loginIntent: req.session.loginIntent,
       sessionId: req.sessionID
     });
   });
 });
 
-app.post("/set-intent/:intent", (req, res) => {
-  const intent = req.params.intent;
-  console.log(`Setting intent: ${intent}`);
-  req.session.testIntent = intent;
+app.get("/set-admin-intent", (req, res) => {
+  console.log("Setting admin intent...");
+  req.session.loginIntent = "admin";
+  pendingIntents.set(req.sessionID, {
+    intent: "admin",
+    timestamp: Date.now()
+  });
+  
   req.session.save((err) => {
     if (err) {
       console.error("Session save error:", err);
-      return res.status(500).json({ error: "Session error" });
+      return res.status(500).json({ error: err.message });
     }
-    res.json({ success: true, intent: intent, sessionId: req.sessionID });
+    res.json({ 
+      success: true, 
+      message: "Admin intent set",
+      loginIntent: req.session.loginIntent,
+      sessionId: req.sessionID
+    });
   });
 });
 
 /* ================= DISCORD AUTH - FIXED ================= */
 
 app.get("/auth/discord", (req, res) => {
-  console.log("Discord auth initiated");
-  console.log("Current session testIntent:", req.session.testIntent);
+  console.log("Discord auth initiated for TEST");
+  console.log("Current session intent:", req.session.loginIntent);
+  
+  // Set test intent if not already set
+  if (!req.session.loginIntent) {
+    req.session.loginIntent = "test";
+  }
+  
+  // Store in memory as backup
+  pendingIntents.set(req.sessionID, {
+    intent: "test",
+    timestamp: Date.now()
+  });
+  
+  const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
+    process.env.DISCORD_CLIENT_ID
+  }&redirect_uri=${encodeURIComponent(
+    process.env.REDIRECT_URI
+  )}&response_type=code&scope=identify`;
+
+  res.redirect(redirect);
+});
+
+app.get("/auth/discord/admin", (req, res) => {
+  console.log("Discord auth initiated for ADMIN");
+  console.log("Current session intent:", req.session.loginIntent);
+  
+  // Set admin intent
+  req.session.loginIntent = "admin";
+  
+  // Store in memory as backup
+  pendingIntents.set(req.sessionID, {
+    intent: "admin",
+    timestamp: Date.now()
+  });
   
   const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
     process.env.DISCORD_CLIENT_ID
@@ -157,8 +207,9 @@ app.get("/auth/discord", (req, res) => {
 app.get("/auth/discord/callback", async (req, res) => {
   try {
     console.log("\n=== DISCORD CALLBACK START ===");
-    console.log("Session testIntent:", req.session.testIntent);
     console.log("Session ID:", req.sessionID);
+    console.log("Session loginIntent:", req.session.loginIntent);
+    console.log("Pending intents for this session:", pendingIntents.get(req.sessionID));
     
     const code = req.query.code;
     if (!code) return res.status(400).send("No code provided");
@@ -203,6 +254,20 @@ app.get("/auth/discord/callback", async (req, res) => {
       console.log("User is admin:", userRes.data.username);
     }
     
+    // Check intent from session or memory backup
+    let intent = req.session.loginIntent;
+    if (!intent && pendingIntents.has(req.sessionID)) {
+      intent = pendingIntents.get(req.sessionID).intent;
+      req.session.loginIntent = intent;
+    }
+    
+    console.log("Final determined intent:", intent);
+    
+    // Clean up memory backup
+    if (pendingIntents.has(req.sessionID)) {
+      pendingIntents.delete(req.sessionID);
+    }
+    
     // SAVE SESSION
     req.session.save((err) => {
       if (err) {
@@ -223,22 +288,123 @@ app.get("/auth/discord/callback", async (req, res) => {
       console.log("Session saved successfully!");
       console.log("User in session:", req.session.user.username);
       console.log("Is Admin:", req.session.isAdmin);
-      console.log("Test Intent:", req.session.testIntent);
+      console.log("Login Intent:", req.session.loginIntent);
       
-      // FOR ADMINS: Redirect to admin panel
-      if (req.session.isAdmin) {
+      // FOR ADMINS WITH ADMIN INTENT: Redirect to admin panel
+      if (req.session.isAdmin && intent === "admin") {
         console.log("Redirecting admin to /admin");
-        req.session.testIntent = null; // Clear test intent for admins
+        req.session.loginIntent = null; // Clear intent
         req.session.save(() => {
           return res.redirect("/admin");
         });
         return;
       }
       
+      // FOR REGULAR USERS WHO ACCIDENTALLY CLICKED ADMIN LOGIN
+      if (intent === "admin" && !req.session.isAdmin) {
+        console.log("Non-admin trying to access admin panel");
+        req.session.loginIntent = null;
+        req.session.save(() => {
+          return res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>Access Denied</title>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+              <style>
+                body { 
+                  font-family: Arial, sans-serif; 
+                  text-align: center; 
+                  padding: 50px; 
+                  background: #36393f;
+                  color: white;
+                  margin: 0;
+                }
+                h1 { color: #ff0033; }
+                .error-container {
+                  background: #202225;
+                  padding: 40px;
+                  border-radius: 12px;
+                  margin: 30px auto;
+                  max-width: 600px;
+                  text-align: left;
+                }
+                .user-info {
+                  background: #2f3136;
+                  padding: 20px;
+                  border-radius: 8px;
+                  margin: 20px 0;
+                }
+                .contact-link {
+                  color: #5865f2;
+                  font-weight: bold;
+                  text-decoration: none;
+                }
+                .contact-link:hover {
+                  text-decoration: underline;
+                }
+                .action-buttons {
+                  margin-top: 30px;
+                  display: flex;
+                  gap: 15px;
+                  justify-content: center;
+                  flex-wrap: wrap;
+                }
+                .action-btn {
+                  padding: 12px 24px;
+                  border-radius: 8px;
+                  text-decoration: none;
+                  font-weight: bold;
+                  color: white;
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 8px;
+                }
+                .test-btn {
+                  background: #5865f2;
+                }
+                .home-btn {
+                  background: #3ba55c;
+                }
+              </style>
+            </head>
+            <body>
+              <h1><i class="fas fa-ban"></i> Access Denied</h1>
+              <p>You don't have administrator privileges.</p>
+              
+              <div class="error-container">
+                <div class="user-info">
+                  <p><strong>Your Discord:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
+                  <p><strong>Your ID:</strong> ${req.session.user.id}</p>
+                  <p><strong>Required Admin IDs:</strong> ${adminIds.join(', ')}</p>
+                </div>
+                
+                <p>If you need admin access, contact <a href="https://discord.com/users/727888300210913310" class="contact-link" target="_blank">@nicksscold</a> on Discord.</p>
+                
+                <p>If you were trying to take the moderator test, use the "Begin Certification Test" button on the training page.</p>
+              </div>
+              
+              <div class="action-buttons">
+                <a href="https://hunterahead71-hash.github.io/void.training/" class="action-btn home-btn">
+                  <i class="fas fa-home"></i> Return to Training
+                </a>
+                <a href="/auth/discord" class="action-btn test-btn">
+                  <i class="fas fa-vial"></i> Take Mod Test Instead
+                </a>
+              </div>
+            </body>
+            </html>
+          `);
+        });
+        return;
+      }
+      
       // FOR REGULAR USERS WITH TEST INTENT: Redirect to test
-      if (req.session.testIntent === "test") {
+      if (intent === "test") {
         console.log("User has test intent, redirecting to test interface");
-        req.session.testIntent = null; // Clear after use
+        req.session.loginIntent = null; // Clear after use
         
         req.session.save(() => {
           // Create redirect URL with user data
@@ -264,8 +430,8 @@ app.get("/auth/discord/callback", async (req, res) => {
         return;
       }
       
-      // FOR REGULAR USERS WITHOUT TEST INTENT: Redirect to homepage
-      console.log("Regular user without test intent, redirecting to homepage");
+      // FOR ANY OTHER CASE (no intent): Redirect to homepage
+      console.log("No specific intent, redirecting to homepage");
       return res.redirect("https://hunterahead71-hash.github.io/void.training/");
     });
 
@@ -301,7 +467,8 @@ app.get("/me", (req, res) => {
     authenticated: true,
     user: req.session.user,
     isAdmin: req.session.isAdmin || false,
-    sessionId: req.sessionID
+    sessionId: req.sessionID,
+    loginIntent: req.session.loginIntent || null
   });
 });
 
@@ -364,7 +531,7 @@ app.get("/admin", async (req, res) => {
         <h1><i class="fas fa-exclamation-triangle"></i> Not Logged In</h1>
         <p>You need to log in with Discord to access the admin panel.</p>
         
-        <a href="/auth/discord" class="login-btn">
+        <a href="/auth/discord/admin" class="login-btn">
           <i class="fab fa-discord"></i> Login with Discord
         </a>
         
@@ -462,8 +629,8 @@ app.get("/admin", async (req, res) => {
           <a href="https://hunterahead71-hash.github.io/void.training/" class="action-btn">
             <i class="fas fa-home"></i> Return to Training
           </a>
-          <a href="/admin" class="action-btn">
-            <i class="fas fa-redo"></i> Try Again
+          <a href="/auth/discord" class="action-btn">
+            <i class="fas fa-vial"></i> Take Mod Test
           </a>
         </div>
       </body>
@@ -1249,7 +1416,9 @@ app.listen(PORT, () => {
   console.log(`🌐 CORS enabled for: https://hunterahead71-hash.github.io`);
   console.log(`🍪 Session settings: secure=true, sameSite=none, resave=true`);
   console.log(`🔧 Debug endpoints: /debug-session`);
-  console.log(`👑 Admin login: /auth/discord`);
+  console.log(`👑 Admin login: /auth/discord/admin`);
+  console.log(`🧪 Test login: /auth/discord`);
   console.log(`🏥 Health check: /health`);
-  console.log(`🧪 Set test intent: /set-test-intent\n`);
+  console.log(`🎯 Set test intent: /set-test-intent`);
+  console.log(`🛡️ Set admin intent: /set-admin-intent\n`);
 });
