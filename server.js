@@ -20,7 +20,7 @@ const supabase = createClient(
 /* ================= ENHANCED DISCORD BOT ================= */
 
 
-const { EnhancedBotManager } = require('./bot-enhancer.js'); // Add this line if you create the file
+
 
 const bot = new Client({
     intents: [
