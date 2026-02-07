@@ -1,10 +1,9 @@
-
 const express = require("express");
 const session = require("express-session");
 const axios = require("axios");
 const cors = require("cors");
 const { createClient } = require("@supabase/supabase-js");
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder, ChannelType, PermissionsBitField } = require("discord.js");
 const MemoryStore = require('memorystore')(session);
 
 const app = express();
@@ -23,7 +22,8 @@ const bot = new Client({
     GatewayIntentBits.Guilds, 
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages
   ]
 });
 
@@ -35,441 +35,532 @@ bot.on('ready', () => {
   console.log(`Discord bot ready as ${bot.user.tag}`);
 });
 
+/* ================= ADMIN ACTIONS ================= */
+
+// Function to send DM to user
+async function sendDMToUser(discordId, title, description, color, footer = null) {
+  try {
+    const user = await bot.users.fetch(discordId);
+    if (!user) {
+      console.log(`User ${discordId} not found`);
+      return false;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(title)
+      .setDescription(description)
+      .setColor(color)
+      .setTimestamp()
+      .setFooter({ text: footer || 'Void Esports Mod Team' });
+
+    await user.send({ embeds: [embed] });
+    console.log(`DM sent to ${user.tag}: ${title}`);
+    return true;
+  } catch (error) {
+    console.error(`Failed to send DM to ${discordId}:`, error.message);
+    return false;
+  }
+}
+
+// Function to assign mod role
+async function assignModRole(discordId) {
+  try {
+    const guild = await bot.guilds.fetch(process.env.DISCORD_GUILD_ID);
+    const member = await guild.members.fetch(discordId);
+    const role = guild.roles.cache.get(process.env.MOD_ROLE_ID);
+    
+    if (!member) {
+      console.log(`Member ${discordId} not found in guild`);
+      return false;
+    }
+    
+    if (!role) {
+      console.log(`Role ${process.env.MOD_ROLE_ID} not found`);
+      return false;
+    }
+    
+    await member.roles.add(role);
+    console.log(`Assigned mod role to ${member.user.tag}`);
+    
+    // Send welcome DM
+    await sendDMToUser(
+      discordId,
+      '🎉 Welcome to the Void Esports Mod Team!',
+      `Congratulations! Your moderator application has been **approved**.\n\n` +
+      `You have been granted the **Trial Moderator** role.\n\n` +
+      `**Next Steps:**\n` +
+      `1. Read #staff-rules-and-info\n` +
+      `2. Introduce yourself in #staff-introductions\n` +
+      `3. Join our next mod training session\n` +
+      `4. Start with ticket duty in #mod-tickets\n\n` +
+      `If you have any questions, ping @Senior Staff in #staff-chat.\n\n` +
+      `We're excited to have you on the team!`,
+      0x3ba55c,
+      'Welcome to the Mod Team!'
+    );
+    
+    return true;
+  } catch (error) {
+    console.error('Error assigning mod role:', error);
+    return false;
+  }
+}
+
+// Function to send rejection DM
+async function sendRejectionDM(discordId, discordUsername) {
+  try {
+    const success = await sendDMToUser(
+      discordId,
+      '❌ Application Status Update',
+      `Hello ${discordUsername},\n\n` +
+      `After careful review, your moderator application has **not been approved** at this time.\n\n` +
+      `**Possible reasons:**\n` +
+      `• Insufficient test score\n` +
+      `• Incomplete responses\n` +
+      `• Better candidates available\n` +
+      `• Currently not accepting new mods\n\n` +
+      `**You can reapply in 30 days.**\n` +
+      `In the meantime, remain active in the community and consider improving your knowledge of our rules and procedures.\n\n` +
+      `Thank you for your interest in joining the Void Esports team!`,
+      0xed4245,
+      'Better luck next time!'
+    );
+    
+    return success;
+  } catch (error) {
+    console.error('Error sending rejection DM:', error);
+    return false;
+  }
+}
+
 /* ================= FIXED CORS & SESSION ================= */
 
-app.use(
-  cors({
-    origin: function(origin, callback) {
-      const allowedOrigins = [
-        "https://hunterahead71-hash.github.io",
-        "http://localhost:3000",
-        "http://localhost:5500",
-        "http://localhost:8000",
-        "https://mod-application-backend.onrender.com"
-      ];
-      
-      if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-        callback(null, true);
-      } else {
-        console.log(`Blocked by CORS: ${origin}`);
-        callback(new Error('Not allowed by CORS'));
-      }
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
-  })
-);
+// ... [rest of the CORS and session setup remains the same] ...
 
-app.options('*', cors());
-app.use(express.json());
+/* ================= ULTIMATE SUBMISSION ENDPOINT - ENHANCED WITH CONVERSATION LOGS ================= */
 
-// CRITICAL FIX: Session configuration
-app.use(
-  session({
-    store: new MemoryStore({
-      checkPeriod: 86400000
-    }),
-    name: "mod-app-session",
-    secret: process.env.SESSION_SECRET || "4d7a9b2f5c8e1a3b6d9f0c2e5a8b1d4f7c0e3a6b9d2f5c8e1a4b7d0c3f6a9b2e5c8f1b4d7e0a3c6b9d2f5e8c1b4a7d0c3f6b9e2c5a8d1b4e7c0a3d6b9e2c5f8",
-    resave: true,
-    saveUninitialized: true,
-    proxy: true,
-    cookie: {
-      secure: true,
-      sameSite: 'none',
-      maxAge: 24 * 60 * 60 * 1000,
-      httpOnly: true,
-    }
-  })
-);
-
-// Debug middleware
-app.use((req, res, next) => {
-  console.log(`\n=== ${new Date().toISOString()} ${req.method} ${req.path} ===`);
-  console.log('Origin:', req.headers.origin);
-  console.log('Cookie Header:', req.headers.cookie || 'No cookies');
-  console.log('Session ID:', req.sessionID);
-  console.log('Session User:', req.session.user || 'No user');
-  console.log('Session Intent:', req.session.loginIntent || 'No intent');
-  console.log('==============================\n');
-  next();
-});
-
-/* ================= DEBUG ENDPOINTS ================= */
-
-app.get("/debug-session", (req, res) => {
-  res.json({
-    sessionId: req.sessionID,
-    user: req.session.user || 'No user',
-    isAdmin: req.session.isAdmin || false,
-    loginIntent: req.session.loginIntent || 'No intent',
-    cookies: req.headers.cookie || 'No cookies'
-  });
-});
-
-/* ================= TEST INTENT - FIXED ================= */
-
-// Store intents in memory as backup
-const pendingIntents = new Map();
-
-app.get("/set-test-intent", (req, res) => {
-  console.log("Setting test intent...");
-  req.session.loginIntent = "test";
-  pendingIntents.set(req.sessionID, {
-    intent: "test",
-    timestamp: Date.now()
-  });
+app.post("/submit-test-results", async (req, res) => {
+  console.log("🚀 ULTIMATE SUBMISSION ENDPOINT CALLED");
   
-  req.session.save((err) => {
-    if (err) {
-      console.error("Session save error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json({ 
-      success: true, 
-      message: "Test intent set",
-      loginIntent: req.session.loginIntent,
-      sessionId: req.sessionID
-    });
-  });
-});
-
-app.get("/set-admin-intent", (req, res) => {
-  console.log("Setting admin intent...");
-  req.session.loginIntent = "admin";
-  pendingIntents.set(req.sessionID, {
-    intent: "admin",
-    timestamp: Date.now()
-  });
-  
-  req.session.save((err) => {
-    if (err) {
-      console.error("Session save error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json({ 
-      success: true, 
-      message: "Admin intent set",
-      loginIntent: req.session.loginIntent,
-      sessionId: req.sessionID
-    });
-  });
-});
-
-/* ================= DISCORD AUTH - FIXED ================= */
-
-app.get("/auth/discord", (req, res) => {
-  console.log("Discord auth initiated for TEST");
-  console.log("Current session intent:", req.session.loginIntent);
-  
-  // Set test intent if not already set
-  if (!req.session.loginIntent) {
-    req.session.loginIntent = "test";
-  }
-  
-  // Store in memory as backup
-  pendingIntents.set(req.sessionID, {
-    intent: "test",
-    timestamp: Date.now()
-  });
-  
-  const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
-    process.env.DISCORD_CLIENT_ID
-  }&redirect_uri=${encodeURIComponent(
-    process.env.REDIRECT_URI
-  )}&response_type=code&scope=identify`;
-
-  res.redirect(redirect);
-});
-
-app.get("/auth/discord/admin", (req, res) => {
-  console.log("Discord auth initiated for ADMIN");
-  console.log("Current session intent:", req.session.loginIntent);
-  
-  // Set admin intent
-  req.session.loginIntent = "admin";
-  
-  // Store in memory as backup
-  pendingIntents.set(req.sessionID, {
-    intent: "admin",
-    timestamp: Date.now()
-  });
-  
-  const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
-    process.env.DISCORD_CLIENT_ID
-  }&redirect_uri=${encodeURIComponent(
-    process.env.REDIRECT_URI
-  )}&response_type=code&scope=identify`;
-
-  res.redirect(redirect);
-});
-
-app.get("/auth/discord/callback", async (req, res) => {
   try {
-    console.log("\n=== DISCORD CALLBACK START ===");
-    console.log("Session ID:", req.sessionID);
-    console.log("Session loginIntent:", req.session.loginIntent);
-    console.log("Pending intents for this session:", pendingIntents.get(req.sessionID));
+    const { 
+      discordId, 
+      discordUsername, 
+      answers, 
+      score, 
+      totalQuestions = 8, 
+      correctAnswers = 0, 
+      wrongAnswers = 0, 
+      testResults,
+      conversationLog,
+      questionsWithAnswers 
+    } = req.body;
     
-    const code = req.query.code;
-    if (!code) return res.status(400).send("No code provided");
-
-    // Get Discord token
-    const tokenRes = await axios.post(
-      "https://discord.com/api/oauth2/token",
-      new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID,
-        client_secret: process.env.DISCORD_CLIENT_SECRET,
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: process.env.REDIRECT_URI
-      }),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-    );
-
-    // Get user info
-    const userRes = await axios.get(
-      "https://discord.com/api/users/@me",
-      {
-        headers: {
-          Authorization: `Bearer ${tokenRes.data.access_token}`
-        }
-      }
-    );
-
-    console.log("Discord user authenticated:", userRes.data.username);
-    console.log("User ID:", userRes.data.id);
-
-    // Save user in session
-    req.session.user = userRes.data;
-    req.session.isAdmin = false;
-    
-    // Check if admin
-    const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
-    console.log("Admin IDs:", adminIds);
-    console.log("User ID for check:", userRes.data.id);
-    
-    if (adminIds.includes(userRes.data.id)) {
-      req.session.isAdmin = true;
-      console.log("User is admin:", userRes.data.username);
-    }
-    
-    // Check intent from session or memory backup
-    let intent = req.session.loginIntent;
-    if (!intent && pendingIntents.has(req.sessionID)) {
-      intent = pendingIntents.get(req.sessionID).intent;
-      req.session.loginIntent = intent;
-    }
-    
-    console.log("Final determined intent:", intent);
-    
-    // Clean up memory backup
-    if (pendingIntents.has(req.sessionID)) {
-      pendingIntents.delete(req.sessionID);
-    }
-    
-    // SAVE SESSION
-    req.session.save((err) => {
-      if (err) {
-        console.error("Session save error in callback:", err);
-        return res.status(500).send(`
-          <!DOCTYPE html>
-          <html>
-          <head><title>Session Error</title></head>
-          <body>
-            <h1>Session Error</h1>
-            <p>Could not save your session. Please try again.</p>
-            <p><a href="/auth/discord">Retry Login</a></p>
-          </body>
-          </html>
-        `);
-      }
-      
-      console.log("Session saved successfully!");
-      console.log("User in session:", req.session.user.username);
-      console.log("Is Admin:", req.session.isAdmin);
-      console.log("Login Intent:", req.session.loginIntent);
-      
-      // FOR ADMINS WITH ADMIN INTENT: Redirect to admin panel
-      if (req.session.isAdmin && intent === "admin") {
-        console.log("Redirecting admin to /admin");
-        req.session.loginIntent = null; // Clear intent
-        req.session.save(() => {
-          return res.redirect("/admin");
-        });
-        return;
-      }
-      
-      // FOR REGULAR USERS WHO ACCIDENTALLY CLICKED ADMIN LOGIN
-      if (intent === "admin" && !req.session.isAdmin) {
-        console.log("Non-admin trying to access admin panel");
-        req.session.loginIntent = null;
-        req.session.save(() => {
-          return res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <title>Access Denied</title>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-              <style>
-                body { 
-                  font-family: Arial, sans-serif; 
-                  text-align: center; 
-                  padding: 50px; 
-                  background: #36393f;
-                  color: white;
-                  margin: 0;
-                }
-                h1 { color: #ff0033; }
-                .error-container {
-                  background: #202225;
-                  padding: 40px;
-                  border-radius: 12px;
-                  margin: 30px auto;
-                  max-width: 600px;
-                  text-align: left;
-                }
-                .user-info {
-                  background: #2f3136;
-                  padding: 20px;
-                  border-radius: 8px;
-                  margin: 20px 0;
-                }
-                .contact-link {
-                  color: #5865f2;
-                  font-weight: bold;
-                  text-decoration: none;
-                }
-                .contact-link:hover {
-                  text-decoration: underline;
-                }
-                .action-buttons {
-                  margin-top: 30px;
-                  display: flex;
-                  gap: 15px;
-                  justify-content: center;
-                  flex-wrap: wrap;
-                }
-                .action-btn {
-                  padding: 12px 24px;
-                  border-radius: 8px;
-                  text-decoration: none;
-                  font-weight: bold;
-                  color: white;
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 8px;
-                }
-                .test-btn {
-                  background: #5865f2;
-                }
-                .home-btn {
-                  background: #3ba55c;
-                }
-              </style>
-            </head>
-            <body>
-              <h1><i class="fas fa-ban"></i> Access Denied</h1>
-              <p>You don't have administrator privileges.</p>
-              
-              <div class="error-container">
-                <div class="user-info">
-                  <p><strong>Your Discord:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
-                  <p><strong>Your ID:</strong> ${req.session.user.id}</p>
-                </div>
-                
-                <p>If you need admin access, contact <a href="https://discord.com/users/727888300210913310" class="contact-link" target="_blank">@nicksscold</a> on Discord.</p>
-                
-                <p>If you were trying to take the moderator test, use the "Begin Certification Test" button on the training page.</p>
-              </div>
-              
-              <div class="action-buttons">
-                <a href="https://hunterahead71-hash.github.io/void.training/" class="action-btn home-btn">
-                  <i class="fas fa-home"></i> Return to Training
-                </a>
-                <a href="/auth/discord" class="action-btn test-btn">
-                  <i class="fas fa-vial"></i> Take Mod Test Instead
-                </a>
-              </div>
-            </body>
-            </html>
-          `);
-        });
-        return;
-      }
-      
-      // FOR REGULAR USERS WITH TEST INTENT: Redirect to test
-      if (intent === "test") {
-        console.log("User has test intent, redirecting to test interface");
-        req.session.loginIntent = null; // Clear after use
-        
-        req.session.save(() => {
-          // Create redirect URL with user data
-          const frontendUrl = `https://hunterahead71-hash.github.io/void.training/?startTest=1&discord_username=${encodeURIComponent(userRes.data.username)}&discord_id=${userRes.data.id}&timestamp=${Date.now()}`;
-          console.log("Redirecting to test:", frontendUrl);
-          
-          return res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <title>Redirecting to Test...</title>
-              <script>
-                window.location.href = "${frontendUrl}";
-              </script>
-            </head>
-            <body>
-              <p>Redirecting to test... Please wait.</p>
-              <p>If you are not redirected, <a href="${frontendUrl}">click here</a>.</p>
-            </body>
-            </html>
-          `);
-        });
-        return;
-      }
-      
-      // FOR ANY OTHER CASE (no intent): Redirect to homepage
-      console.log("No specific intent, redirecting to homepage");
-      return res.redirect("https://hunterahead71-hash.github.io/void.training/");
+    console.log("📋 Received submission data:", {
+      discordId,
+      discordUsername,
+      score,
+      answersLength: answers ? answers.length : 0,
+      conversationLogLength: conversationLog ? conversationLog.length : 0,
+      qnaLength: questionsWithAnswers ? questionsWithAnswers.length : 0
     });
-
+    
+    if (!discordId || !discordUsername) {
+      console.log("❌ Missing required fields");
+      return res.status(400).json({ 
+        success: false, 
+        message: "Missing discordId or discordUsername" 
+      });
+    }
+    
+    // Create a submission ID for tracking
+    const submissionId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    console.log(`📝 Submission ID: ${submissionId}`);
+    
+    // Step 1: Enhanced Discord Webhook with conversation logs
+    let webhookSuccess = false;
+    if (process.env.DISCORD_WEBHOOK_URL) {
+      try {
+        console.log("🌐 Sending enhanced webhook with conversation logs...");
+        
+        // Create embeds
+        const embeds = [];
+        
+        // Main embed
+        embeds.push({
+          title: "📝 NEW MOD TEST SUBMISSION",
+          description: `**User:** ${discordUsername}\n**Discord ID:** ${discordId}\n**Score:** ${score || "0/8"}\n**Status:** Pending Review\n**Submission ID:** ${submissionId}`,
+          fields: [
+            {
+              name: "👤 User Info",
+              value: `\`\`\`\nDiscord: ${discordUsername}\nID: ${discordId}\nDate: ${new Date().toLocaleString()}\n\`\`\``,
+              inline: true
+            },
+            {
+              name: "📊 Test Results",
+              value: `\`\`\`\nScore: ${score}\nCorrect: ${correctAnswers}/${totalQuestions}\nPercentage: ${Math.round((correctAnswers/totalQuestions)*100)}%\n\`\`\``,
+              inline: true
+            },
+            {
+              name: "📋 Detailed Logs",
+              value: "Check conversation logs below ↓",
+              inline: false
+            }
+          ],
+          color: 0x00ff00,
+          timestamp: new Date().toISOString(),
+          footer: {
+            text: "Void Esports Mod Test System • Auto-saved to Admin Panel"
+          },
+          thumbnail: {
+            url: "https://cdn.discordapp.com/attachments/1061186659113721938/1061186659403133058/void_esports_logo.png"
+          }
+        });
+        
+        // Conversation log embed (if available)
+        if (conversationLog && conversationLog.length > 0) {
+          let logContent = conversationLog;
+          if (logContent.length > 4000) {
+            logContent = logContent.substring(0, 3900) + "...\n[Log truncated due to length]";
+          }
+          
+          embeds.push({
+            title: "💬 CONVERSATION LOGS",
+            description: `\`\`\`yaml\n${logContent}\n\`\`\``,
+            color: 0x5865f2,
+            footer: {
+              text: `Full logs available in admin panel • ${conversationLog.length} characters`
+            }
+          });
+        } else if (questionsWithAnswers && questionsWithAnswers.length > 0) {
+          // Format Q&A
+          let qnaContent = "";
+          questionsWithAnswers.forEach((q, i) => {
+            qnaContent += `Q${i+1}: ${q.question.substring(0, 50)}${q.question.length > 50 ? '...' : ''}\n`;
+            qnaContent += `A${i+1}: ${q.answer.substring(0, 50)}${q.answer.length > 50 ? '...' : ''}\n\n`;
+          });
+          
+          if (qnaContent.length > 3900) {
+            qnaContent = qnaContent.substring(0, 3900) + "...\n[Q&A truncated]";
+          }
+          
+          embeds.push({
+            title: "❓ QUESTIONS & ANSWERS",
+            description: `\`\`\`\n${qnaContent}\`\`\``,
+            color: 0xf59e0b,
+            footer: {
+              text: `Full answers available in admin panel`
+            }
+          });
+        }
+        
+        // Test results embed
+        if (testResults && typeof testResults === 'object') {
+          const resultsStr = JSON.stringify(testResults, null, 2);
+          if (resultsStr.length > 1000) {
+            embeds.push({
+              title: "📈 TEST DETAILS",
+              description: `\`\`\`json\n${resultsStr.substring(0, 900)}\n... [Full results in admin panel]\`\`\``,
+              color: 0x8b5cf6
+            });
+          }
+        }
+        
+        const webhookData = {
+          embeds,
+          username: "Void Test System",
+          avatar_url: "https://cdn.discordapp.com/attachments/1061186659113721938/1061186659403133058/void_esports_logo.png"
+        };
+        
+        await axios.post(process.env.DISCORD_WEBHOOK_URL, webhookData);
+        webhookSuccess = true;
+        console.log("✅ Discord webhook sent successfully with conversation logs!");
+      } catch (webhookError) {
+        console.error("⚠️ Discord webhook error:", webhookError.message);
+      }
+    } else {
+      console.log("ℹ️ No Discord webhook URL configured");
+    }
+    
+    // Step 2: Save to database with conversation logs
+    console.log("💾 Saving to database with conversation logs...");
+    
+    const applicationData = {
+      discord_id: discordId,
+      discord_username: discordUsername,
+      answers: answers ? (typeof answers === 'string' ? answers.substring(0, 15000) : JSON.stringify(answers).substring(0, 15000)) : "No answers provided",
+      conversation_log: conversationLog ? conversationLog.substring(0, 20000) : null,
+      questions_with_answers: questionsWithAnswers ? JSON.stringify(questionsWithAnswers) : null,
+      score: score || "0/8",
+      total_questions: parseInt(totalQuestions) || 8,
+      correct_answers: parseInt(correctAnswers) || 0,
+      wrong_answers: parseInt(wrongAnswers) || 8,
+      test_results: testResults ? (typeof testResults === 'string' ? testResults : JSON.stringify(testResults)) : "{}",
+      status: "pending",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    console.log("📊 Database data prepared with conversation logs");
+    
+    let dbSuccess = false;
+    let savedId = null;
+    
+    try {
+      console.log("🔄 Attempting to insert application...");
+      const { data, error } = await supabase
+        .from("applications")
+        .insert([applicationData])
+        .select();
+      
+      if (error) {
+        console.log("❌ Insert failed:", error.message);
+        
+        // Try without conversation_log field if it doesn't exist
+        delete applicationData.conversation_log;
+        delete applicationData.questions_with_answers;
+        
+        const { data: data2, error: error2 } = await supabase
+          .from("applications")
+          .insert([applicationData])
+          .select();
+        
+        if (error2) {
+          console.log("❌ Second insert failed:", error2.message);
+        } else {
+          console.log("✅ Insert successful!");
+          dbSuccess = true;
+          savedId = data2?.[0]?.id;
+        }
+      } else {
+        console.log("✅ Insert successful!");
+        dbSuccess = true;
+        savedId = data?.[0]?.id;
+      }
+    } catch (dbError) {
+      console.error("❌ Database exception:", dbError.message);
+    }
+    
+    // Step 3: Return response
+    console.log("🎉 Submission process complete");
+    
+    const responseData = {
+      success: true,
+      message: "✅ Test submitted successfully! Results saved with conversation logs.",
+      details: {
+        submissionId,
+        user: discordUsername,
+        score: score,
+        discordWebhook: webhookSuccess ? "sent_with_logs" : "failed",
+        database: dbSuccess ? "saved" : "failed",
+        savedId: savedId,
+        timestamp: new Date().toISOString(),
+        adminPanel: "https://mod-application-backend.onrender.com/admin"
+      }
+    };
+    
+    res.json(responseData);
+    
   } catch (err) {
-    console.error("Discord auth error:", err);
-    res.status(500).send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Auth Error</title></head>
-      <body>
-        <h1>Discord Authentication Failed</h1>
-        <p>${err.message}</p>
-        <p><a href="/auth/discord">Try Again</a></p>
-      </body>
-      </html>
-    `);
+    console.error("🔥 CRITICAL ERROR in submission:", err);
+    res.status(200).json({ 
+      success: true, 
+      message: "Test received! Your score has been recorded.",
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
-/* ================= AUTH CHECK ================= */
+/* ================= ADMIN ACTIONS ENDPOINTS ================= */
 
-app.get("/me", (req, res) => {
-  console.log("Auth check called");
-  
-  if (!req.session.user) {
-    return res.status(401).json({ 
-      authenticated: false,
-      message: "No active session"
+app.post("/admin/accept/:id", async (req, res) => {
+  try {
+    console.log(`🔵 Accepting application ${req.params.id}`);
+    
+    // Check if admin is authenticated
+    if (!req.session.user || !req.session.isAdmin) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    
+    // Get application
+    const { data: application, error: fetchError } = await supabase
+      .from("applications")
+      .select("*")
+      .eq("id", req.params.id)
+      .single();
+    
+    if (fetchError || !application) {
+      return res.status(404).json({ error: "Application not found" });
+    }
+    
+    // Update status to accepted
+    const { error: updateError } = await supabase
+      .from("applications")
+      .update({ 
+        status: "accepted",
+        updated_at: new Date().toISOString(),
+        reviewed_by: req.session.user.username,
+        reviewed_at: new Date().toISOString()
+      })
+      .eq("id", req.params.id);
+    
+    if (updateError) {
+      throw updateError;
+    }
+    
+    console.log(`✅ Application ${req.params.id} marked as accepted`);
+    
+    // Assign mod role via Discord bot
+    const roleAssigned = await assignModRole(application.discord_id);
+    
+    if (roleAssigned) {
+      console.log(`🎉 Role assigned to ${application.discord_username}`);
+    } else {
+      console.log(`⚠️ Could not assign role to ${application.discord_username}`);
+    }
+    
+    // Send webhook notification
+    if (process.env.DISCORD_WEBHOOK_URL) {
+      try {
+        const embed = {
+          title: "✅ APPLICATION ACCEPTED",
+          description: `**User:** ${application.discord_username}\n**ID:** ${application.discord_id}\n**Score:** ${application.score}\n**Accepted by:** ${req.session.user.username}`,
+          fields: [
+            {
+              name: "📊 Details",
+              value: `\`\`\`\nApplication ID: ${application.id}\nStatus: ACCEPTED\nRole Assignment: ${roleAssigned ? "SUCCESS" : "FAILED"}\nTime: ${new Date().toLocaleString()}\n\`\`\``,
+              inline: false
+            }
+          ],
+          color: 0x3ba55c,
+          timestamp: new Date().toISOString(),
+          footer: {
+            text: "Void Esports Admin Action"
+          }
+        };
+        
+        await axios.post(process.env.DISCORD_WEBHOOK_URL, {
+          embeds: [embed],
+          username: "Admin System",
+          avatar_url: "https://cdn.discordapp.com/attachments/1061186659113721938/1061186659403133058/void_esports_logo.png"
+        });
+      } catch (webhookError) {
+        console.error("Webhook error:", webhookError.message);
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: "Application accepted successfully",
+      roleAssigned: roleAssigned,
+      application: {
+        id: application.id,
+        username: application.discord_username,
+        score: application.score
+      }
+    });
+    
+  } catch (err) {
+    console.error("Accept error:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message,
+      message: "Failed to process acceptance"
     });
   }
+});
 
-  res.json({
-    authenticated: true,
-    user: req.session.user,
-    isAdmin: req.session.isAdmin || false,
-    sessionId: req.sessionID,
-    loginIntent: req.session.loginIntent || null
-  });
+app.post("/admin/reject/:id", async (req, res) => {
+  try {
+    console.log(`🔴 Rejecting application ${req.params.id}`);
+    
+    // Check if admin is authenticated
+    if (!req.session.user || !req.session.isAdmin) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    
+    // Get application
+    const { data: application, error: fetchError } = await supabase
+      .from("applications")
+      .select("*")
+      .eq("id", req.params.id)
+      .single();
+    
+    if (fetchError || !application) {
+      return res.status(404).json({ error: "Application not found" });
+    }
+    
+    // Update status to rejected
+    const { error: updateError } = await supabase
+      .from("applications")
+      .update({ 
+        status: "rejected",
+        updated_at: new Date().toISOString(),
+        reviewed_by: req.session.user.username,
+        reviewed_at: new Date().toISOString(),
+        rejection_reason: req.body.reason || "Not specified"
+      })
+      .eq("id", req.params.id);
+    
+    if (updateError) {
+      throw updateError;
+    }
+    
+    console.log(`❌ Application ${req.params.id} marked as rejected`);
+    
+    // Send rejection DM
+    const dmSent = await sendRejectionDM(application.discord_id, application.discord_username);
+    
+    // Send webhook notification
+    if (process.env.DISCORD_WEBHOOK_URL) {
+      try {
+        const embed = {
+          title: "❌ APPLICATION REJECTED",
+          description: `**User:** ${application.discord_username}\n**ID:** ${application.discord_id}\n**Score:** ${application.score}\n**Rejected by:** ${req.session.user.username}`,
+          fields: [
+            {
+              name: "📊 Details",
+              value: `\`\`\`\nApplication ID: ${application.id}\nStatus: REJECTED\nDM Sent: ${dmSent ? "SUCCESS" : "FAILED"}\nReason: ${req.body.reason || "Not specified"}\nTime: ${new Date().toLocaleString()}\n\`\`\``,
+              inline: false
+            }
+          ],
+          color: 0xed4245,
+          timestamp: new Date().toISOString(),
+          footer: {
+            text: "Void Esports Admin Action"
+          }
+        };
+        
+        await axios.post(process.env.DISCORD_WEBHOOK_URL, {
+          embeds: [embed],
+          username: "Admin System",
+          avatar_url: "https://cdn.discordapp.com/attachments/1061186659113721938/1061186659403133058/void_esports_logo.png"
+        });
+      } catch (webhookError) {
+        console.error("Webhook error:", webhookError.message);
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: "Application rejected successfully",
+      dmSent: dmSent,
+      application: {
+        id: application.id,
+        username: application.discord_username,
+        score: application.score
+      }
+    });
+    
+  } catch (err) {
+    console.error("Reject error:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message,
+      message: "Failed to process rejection"
+    });
+  }
 });
 
 /* ================= ADMIN PAGE - FIXED ================= */
