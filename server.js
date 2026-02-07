@@ -81,6 +81,7 @@ bot.on('ready', async () => {
           // Check if bot can assign this role
           if (modRole.position >= botMember.roles.highest.position) {
             console.warn(`⚠️  WARNING: Mod role is higher than bot's highest role! Bot cannot assign this role.`);
+            console.warn(`💡 FIX: Move the bot's role higher than the mod role in Discord Server Settings → Roles`);
           }
         }
       }
@@ -100,11 +101,6 @@ bot.on('warn', (warning) => {
 
 bot.on('guildMemberAdd', async (member) => {
   console.log(`👤 New member joined: ${member.user.tag}`);
-});
-
-bot.on('interactionCreate', async (interaction) => {
-  if (!interaction.isCommand()) return;
-  console.log(`🔄 Command received: ${interaction.commandName}`);
 });
 
 // Bot login with retry logic
@@ -258,98 +254,108 @@ async function sendDMToUser(discordId, title, description, color, footer = null)
   }
 }
 
-// Enhanced function to assign mod role
+// FIXED function to assign mod role - COMPLETELY REWRITTEN
 async function assignModRole(discordId, discordUsername = 'User') {
-  console.log(`🎯 Attempting to assign mod role to ${discordUsername} (${discordId})`);
+  console.log(`\n🎯 ATTEMPTING TO ASSIGN MOD ROLE`);
+  console.log(`   User: ${discordUsername} (${discordId})`);
   
   try {
-    // Ensure bot is ready
+    // 1. Check if bot is ready
     if (!await ensureBotReady()) {
       console.log("❌ Bot is not ready/connected");
-      return { success: false, error: "Bot not ready" };
+      return { success: false, error: "Bot not ready. Please check if bot is online and has proper intents enabled." };
     }
     
-    // Check if required env vars exist
+    // 2. Check if required environment variables exist
     if (!process.env.DISCORD_GUILD_ID || !process.env.MOD_ROLE_ID) {
-      console.log("❌ Missing DISCORD_GUILD_ID or MOD_ROLE_ID in environment");
-      return { success: false, error: "Missing environment variables" };
+      console.log("❌ Missing environment variables");
+      console.log(`   DISCORD_GUILD_ID: ${process.env.DISCORD_GUILD_ID ? "Set" : "NOT SET"}`);
+      console.log(`   MOD_ROLE_ID: ${process.env.MOD_ROLE_ID ? "Set" : "NOT SET"}`);
+      return { success: false, error: "Missing Discord configuration. Check DISCORD_GUILD_ID and MOD_ROLE_ID environment variables." };
     }
     
-    console.log(`🔍 Looking for guild: ${process.env.DISCORD_GUILD_ID}`);
+    const guildId = process.env.DISCORD_GUILD_ID;
+    const roleId = process.env.MOD_ROLE_ID;
     
+    console.log(`🔍 Guild ID: ${guildId}`);
+    console.log(`🔍 Role ID: ${roleId}`);
+    
+    // 3. Fetch guild
     let guild;
     try {
-      guild = await bot.guilds.fetch(process.env.DISCORD_GUILD_ID);
+      guild = await bot.guilds.fetch(guildId);
       console.log(`✅ Found guild: ${guild.name} (${guild.id})`);
     } catch (guildError) {
       console.error(`❌ Could not fetch guild:`, guildError.message);
-      return { success: false, error: "Guild not found" };
+      return { success: false, error: `Guild not found. Bot might not be in this server. Error: ${guildError.message}` };
     }
     
-    console.log(`🔍 Looking for member: ${discordId}`);
-    
+    // 4. Fetch member (user in the guild)
     let member;
     try {
       member = await guild.members.fetch(discordId);
       console.log(`✅ Found member: ${member.user.tag} (${member.id})`);
     } catch (memberError) {
       console.error(`❌ Could not fetch member:`, memberError.message);
-      return { success: false, error: "Member not found in guild" };
+      return { success: false, error: `User not found in the server. Make sure ${discordUsername} is in ${guild.name}. Error: ${memberError.message}` };
     }
     
-    console.log(`🔍 Looking for role: ${process.env.MOD_ROLE_ID}`);
-    
-    const role = guild.roles.cache.get(process.env.MOD_ROLE_ID);
-    if (!role) {
-      console.log(`❌ Role ${process.env.MOD_ROLE_ID} not found`);
-      // Try to fetch from API
-      try {
-        const fetchedRole = await guild.roles.fetch(process.env.MOD_ROLE_ID);
-        if (!fetchedRole) {
-          return { success: false, error: "Role not found" };
-        }
-        console.log(`✅ Fetched role: ${fetchedRole.name}`);
-      } catch (roleError) {
-        console.error(`❌ Error fetching role:`, roleError.message);
-        return { success: false, error: "Role not found" };
+    // 5. Fetch role
+    let role;
+    try {
+      role = await guild.roles.fetch(roleId);
+      if (!role) {
+        console.log(`❌ Role ${roleId} not found`);
+        return { success: false, error: `Mod role not found. Check MOD_ROLE_ID environment variable.` };
       }
-    } else {
       console.log(`✅ Found role: ${role.name} (${role.id})`);
+    } catch (roleError) {
+      console.error(`❌ Error fetching role:`, roleError.message);
+      return { success: false, error: `Could not fetch role. Error: ${roleError.message}` };
     }
     
-    // Check bot permissions
+    // 6. Check bot permissions
     const botMember = await guild.members.fetch(bot.user.id);
-    console.log(`🔍 Checking bot permissions for ${botMember.user.tag}`);
+    console.log(`🔍 Bot member: ${botMember.user.tag}`);
+    console.log(`🔍 Bot permissions:`, botMember.permissions.toArray());
     
     if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
       console.log("❌ Bot lacks ManageRoles permission");
-      return { success: false, error: "Bot lacks ManageRoles permission" };
+      return { success: false, error: "Bot lacks 'Manage Roles' permission. Grant this permission in Discord server settings." };
     }
     console.log("✅ Bot has ManageRoles permission");
     
-    // Check role hierarchy (bot can only assign roles lower than its highest role)
+    // 7. Check role hierarchy - CRITICAL FIX
     const botHighestRole = botMember.roles.highest;
+    console.log(`🔍 Bot's highest role: ${botHighestRole.name} (position: ${botHighestRole.position})`);
+    console.log(`🔍 Mod role position: ${role.position}`);
+    
     if (role.position >= botHighestRole.position) {
-      console.log("❌ Role is higher than bot's highest role");
-      console.log(`   - Role position: ${role.position}`);
-      console.log(`   - Bot's highest role position: ${botHighestRole.position}`);
-      return { success: false, error: "Role hierarchy issue" };
+      console.log("❌ Role hierarchy issue: Mod role is higher than or equal to bot's highest role");
+      console.log(`💡 FIX: In Discord Server Settings → Roles, drag the bot's role ABOVE the mod role`);
+      return { success: false, error: "Role hierarchy issue. Bot's role must be higher than the mod role in Discord server settings." };
     }
     console.log("✅ Role hierarchy is valid");
     
-    // Assign the role
-    console.log(`🔄 Assigning role ${role.name} to ${member.user.tag}...`);
+    // 8. Check if member already has the role
+    if (member.roles.cache.has(role.id)) {
+      console.log(`ℹ️ Member already has the role`);
+      return { success: true, message: "Member already has the role", dmSent: false };
+    }
+    
+    // 9. Assign the role - FINAL STEP
+    console.log(`🔄 Assigning role "${role.name}" to ${member.user.tag}...`);
     try {
       await member.roles.add(role);
-      console.log(`✅ Assigned mod role to ${member.user.tag}`);
+      console.log(`✅ SUCCESS: Assigned mod role to ${member.user.tag}`);
       
-      // Send welcome DM
-      console.log(`📨 Sending welcome DM to ${member.user.tag}...`);
+      // 10. Send welcome DM
+      console.log(`📨 Attempting to send welcome DM...`);
       const dmSuccess = await sendDMToUser(
         discordId,
         '🎉 Welcome to the Void Esports Mod Team!',
         `Congratulations ${discordUsername}! Your moderator application has been **approved**.\n\n` +
-        `You have been granted the **Trial Moderator** role.\n\n` +
+        `You have been granted the **${role.name}** role.\n\n` +
         `**Next Steps:**\n` +
         `1. Read #staff-rules-and-info\n` +
         `2. Introduce yourself in #staff-introductions\n` +
@@ -361,25 +367,43 @@ async function assignModRole(discordId, discordUsername = 'User') {
         'Welcome to the Mod Team!'
       );
       
-      if (!dmSuccess) {
-        console.log("⚠️ Could not send welcome DM, but role was assigned");
+      if (dmSuccess) {
+        console.log(`✅ Welcome DM sent to ${member.user.tag}`);
+      } else {
+        console.log(`⚠️ Could not send welcome DM (user may have DMs disabled)`);
       }
       
       return { 
         success: true, 
-        message: `Role assigned to ${member.user.tag}`,
-        dmSent: dmSuccess
+        message: `Successfully assigned ${role.name} to ${member.user.tag}`,
+        dmSent: dmSuccess,
+        details: {
+          username: member.user.tag,
+          role: role.name,
+          guild: guild.name
+        }
       };
       
     } catch (assignError) {
-      console.error('❌ Error assigning role:', assignError.message);
-      return { success: false, error: assignError.message };
+      console.error('❌ ERROR assigning role:', assignError.message);
+      console.error('Full error:', assignError);
+      
+      // Specific error handling
+      if (assignError.message.includes("Missing Permissions")) {
+        return { success: false, error: "Bot lacks permissions. Make sure bot has 'Manage Roles' permission and its role is above the mod role." };
+      } else if (assignError.message.includes("Invalid Form Body")) {
+        return { success: false, error: "Invalid role ID. Check MOD_ROLE_ID environment variable." };
+      } else if (assignError.message.includes("rate limited")) {
+        return { success: false, error: "Rate limited by Discord. Please try again in a few seconds." };
+      } else {
+        return { success: false, error: `Failed to assign role: ${assignError.message}` };
+      }
     }
     
   } catch (error) {
-    console.error('❌ Error in assignModRole:', error.message);
-    console.error('Stack:', error.stack);
-    return { success: false, error: error.message };
+    console.error('❌ CRITICAL ERROR in assignModRole:', error.message);
+    console.error('Stack trace:', error.stack);
+    return { success: false, error: `Unexpected error: ${error.message}` };
   }
 }
 
@@ -1424,6 +1448,42 @@ app.get("/admin", async (req, res) => {
             font-size: 12px;
             font-family: monospace;
           }
+          
+          .bot-status {
+            background: #2f3136;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border-left: 4px solid #f59e0b;
+          }
+          
+          .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 5px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+          }
+          
+          .status-label {
+            color: #888;
+          }
+          
+          .status-value {
+            font-weight: bold;
+          }
+          
+          .status-good {
+            color: #3ba55c;
+          }
+          
+          .status-bad {
+            color: #ed4245;
+          }
+          
+          .status-warning {
+            color: #f59e0b;
+          }
         </style>
       </head>
       <body>
@@ -1431,6 +1491,25 @@ app.get("/admin", async (req, res) => {
           <div class="header">
             <h1><i class="fas fa-shield-alt"></i> VOID ESPORTS - ADMIN DASHBOARD</h1>
             <a href="/logout" class="logout-btn"><i class="fas fa-sign-out-alt"></i> Logout</a>
+          </div>
+          
+          <div class="bot-status">
+            <h3 style="margin-top: 0;"><i class="fas fa-robot"></i> Bot Status</h3>
+            <div class="status-item">
+              <span class="status-label">Bot Status:</span>
+              <span class="status-value ${botReady ? 'status-good' : 'status-bad'}">${botReady ? '✅ Connected' : '❌ Disconnected'}</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">Guild ID:</span>
+              <span class="status-value ${process.env.DISCORD_GUILD_ID ? 'status-good' : 'status-bad'}">${process.env.DISCORD_GUILD_ID ? '✅ Set' : '❌ Not Set'}</span>
+            </div>
+            <div class="status-item">
+              <span class="status-label">Mod Role ID:</span>
+              <span class="status-value ${process.env.MOD_ROLE_ID ? 'status-good' : 'status-bad'}">${process.env.MOD_ROLE_ID ? '✅ Set' : '❌ Not Set'}</span>
+            </div>
+            <div style="margin-top: 10px; font-size: 12px; color: #888;">
+              <i class="fas fa-info-circle"></i> Check bot debug: <a href="/debug/bot" style="color: #00ffea;">/debug/bot</a>
+            </div>
           </div>
           
           <div class="stats">
@@ -1546,6 +1625,8 @@ app.get("/admin", async (req, res) => {
               const response = await fetch(url, options);
               const result = await response.json();
               
+              console.log('Action result:', result);
+              
               if (response.ok) {
                 if (result.success) {
                   // Show success message
@@ -1557,6 +1638,7 @@ app.get("/admin", async (req, res) => {
                       \${action === 'accept' ? 'Role assigned successfully!' : 'Rejection DM sent!'}
                       \${result.roleAssigned !== undefined ? \`<br>Role assigned: \${result.roleAssigned ? '✅' : '❌'}\` : ''}
                       \${result.dmSent !== undefined ? \`<br>DM sent: \${result.dmSent ? '✅' : '❌'}\` : ''}
+                      \${result.error ? \`<br><small>Error: \${result.error}</small>\` : ''}
                     </div>
                   \`;
                   
@@ -1564,16 +1646,20 @@ app.get("/admin", async (req, res) => {
                   const actionsDiv = btn.parentElement;
                   actionsDiv.insertBefore(successDiv, btn);
                   
+                  // Hide buttons
+                  btn.style.display = 'none';
+                  const otherBtn = action === 'accept' ? btn.nextElementSibling : btn.previousElementSibling;
+                  if (otherBtn) otherBtn.style.display = 'none';
+                  
                   // Reload after 2 seconds to show updated status
                   setTimeout(() => {
                     location.reload();
                   }, 2000);
                 } else {
-                  // Show error but still reload
-                  alert(\`Action completed with warnings:\\n\${result.message || result.error}\`);
-                  setTimeout(() => {
-                    location.reload();
-                  }, 1500);
+                  // Show error
+                  alert(\`Action failed: \${result.error || result.message}\`);
+                  btn.innerHTML = originalText;
+                  btn.disabled = false;
                 }
               } else {
                 alert('Failed to process application: ' + (result.message || 'Unknown error'));
@@ -1586,6 +1672,20 @@ app.get("/admin", async (req, res) => {
               btn.disabled = false;
             }
           }
+          
+          // Check bot status on page load
+          async function checkBotStatus() {
+            try {
+              const response = await fetch('/debug/bot');
+              const data = await response.json();
+              console.log('Bot status:', data);
+            } catch (error) {
+              console.error('Failed to check bot status:', error);
+            }
+          }
+          
+          // Check bot status when page loads
+          window.addEventListener('load', checkBotStatus);
         </script>
       </body>
       </html>
@@ -1634,15 +1734,15 @@ app.get("/admin/application/:id", async (req, res) => {
   }
 });
 
-/* ================= ADMIN ACTIONS ENDPOINTS ================= */
+/* ================= ADMIN ACTIONS ENDPOINTS - FIXED ROLE ASSIGNMENT ================= */
 
 app.post("/admin/accept/:id", async (req, res) => {
   try {
-    console.log(`\n🔵 ACCEPTING APPLICATION ${req.params.id}`);
+    console.log(`\n🔵 ========== ACCEPTING APPLICATION ${req.params.id} ==========`);
     
     // Check if admin is authenticated
     if (!req.session.user || !req.session.isAdmin) {
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json({ success: false, error: "Unauthorized" });
     }
     
     // Get application
@@ -1653,11 +1753,13 @@ app.post("/admin/accept/:id", async (req, res) => {
       .single();
     
     if (fetchError || !application) {
-      return res.status(404).json({ error: "Application not found" });
+      return res.status(404).json({ success: false, error: "Application not found" });
     }
     
-    console.log(`📋 Found application for: ${application.discord_username} (${application.discord_id})`);
-    console.log(`📊 Score: ${application.score}`);
+    console.log(`📋 Application found:`);
+    console.log(`   - Username: ${application.discord_username}`);
+    console.log(`   - Discord ID: ${application.discord_id}`);
+    console.log(`   - Score: ${application.score}`);
     
     // Check if user is a test user
     const username = application.discord_username.toLowerCase();
@@ -1673,14 +1775,19 @@ app.post("/admin/accept/:id", async (req, res) => {
       });
     }
     
-    // First, try to assign the role
-    console.log(`🎯 Attempting to assign role to ${application.discord_id}...`);
+    console.log(`🎯 Step 1: Attempting to assign mod role...`);
+    
+    // Call the FIXED assignModRole function
     const roleResult = await assignModRole(application.discord_id, application.discord_username);
     
-    if (!roleResult.success) {
-      console.log(`❌ Role assignment failed: ${roleResult.error}`);
+    console.log(`📊 Role assignment result:`, roleResult);
+    
+    // Update database based on role assignment result
+    let databaseUpdateResult;
+    if (roleResult.success) {
+      // Role assigned successfully
+      console.log(`✅ Role assignment successful, updating database...`);
       
-      // Update database with failure status
       const { error: updateError } = await supabase
         .from("applications")
         .update({ 
@@ -1688,91 +1795,58 @@ app.post("/admin/accept/:id", async (req, res) => {
           updated_at: new Date().toISOString(),
           reviewed_by: req.session.user.username,
           reviewed_at: new Date().toISOString(),
-          notes: `Role assignment failed: ${roleResult.error}`
+          notes: `Role assigned: ${roleResult.details?.role || 'Mod Role'}. DM sent: ${roleResult.dmSent || false}`
         })
         .eq("id", req.params.id);
+      
+      databaseUpdateResult = updateError;
+      
+      if (updateError) {
+        console.error("Database update error:", updateError);
+      } else {
+        console.log(`✅ Database updated successfully`);
+      }
+    } else {
+      // Role assignment failed
+      console.log(`❌ Role assignment failed, updating database with failure status...`);
+      
+      const { error: updateError } = await supabase
+        .from("applications")
+        .update({ 
+          status: "accepted", // Still mark as accepted even if role assignment failed
+          updated_at: new Date().toISOString(),
+          reviewed_by: req.session.user.username,
+          reviewed_at: new Date().toISOString(),
+          notes: `ROLE ASSIGNMENT FAILED: ${roleResult.error || 'Unknown error'}`
+        })
+        .eq("id", req.params.id);
+      
+      databaseUpdateResult = updateError;
       
       if (updateError) {
         console.error("Database update error:", updateError);
       }
-      
-      // Send webhook notification about failure
-      if (process.env.DISCORD_WEBHOOK_URL) {
-        try {
-          const embed = {
-            title: "⚠️ APPLICATION ACCEPTED - ROLE ASSIGNMENT FAILED",
-            description: `**User:** ${application.discord_username}\n**ID:** ${application.discord_id}\n**Score:** ${application.score}\n**Accepted by:** ${req.session.user.username}`,
-            fields: [
-              {
-                name: "📊 Details",
-                value: `\`\`\`\nApplication ID: ${application.id}\nStatus: ACCEPTED\nRole Assignment: FAILED\nError: ${roleResult.error}\nTime: ${new Date().toLocaleString()}\n\`\`\``,
-                inline: false
-              }
-            ],
-            color: 0xf59e0b,
-            timestamp: new Date().toISOString(),
-            footer: {
-              text: "Void Esports Admin Action"
-            }
-          };
-          
-          await axios.post(process.env.DISCORD_WEBHOOK_URL, {
-            embeds: [embed],
-            username: "Admin System",
-            avatar_url: "https://cdn.discordapp.com/attachments/1061186659113721938/1061186659403133058/void_esports_logo.png"
-          });
-        } catch (webhookError) {
-          console.error("Webhook error:", webhookError.message);
-        }
-      }
-      
-      return res.json({ 
-        success: false, 
-        message: "Application accepted but role assignment failed",
-        roleAssigned: false,
-        error: roleResult.error,
-        application: {
-          id: application.id,
-          username: application.discord_username,
-          score: application.score
-        }
-      });
     }
     
-    // Role assignment successful - update database
-    console.log(`✅ Role assigned successfully, updating database...`);
-    
-    const { error: updateError } = await supabase
-      .from("applications")
-      .update({ 
-        status: "accepted",
-        updated_at: new Date().toISOString(),
-        reviewed_by: req.session.user.username,
-        reviewed_at: new Date().toISOString(),
-        notes: `Role assigned successfully. DM sent: ${roleResult.dmSent || false}`
-      })
-      .eq("id", req.params.id);
-    
-    if (updateError) {
-      console.error("Database update error:", updateError);
-    }
-    
-    console.log(`✅ Application ${req.params.id} fully processed`);
-    
-    // Send success webhook notification
+    // Send webhook notification
     if (process.env.DISCORD_WEBHOOK_URL) {
       try {
+        const embedColor = roleResult.success ? 0x3ba55c : 0xf59e0b;
+        const embedTitle = roleResult.success 
+          ? "✅ APPLICATION ACCEPTED & ROLE ASSIGNED" 
+          : "⚠️ APPLICATION ACCEPTED - ROLE ASSIGNMENT FAILED";
+        
         const embed = {
-          title: "✅ APPLICATION ACCEPTED & ROLE ASSIGNED",
+          title: embedTitle,
           description: `**User:** ${application.discord_username}\n**ID:** ${application.discord_id}\n**Score:** ${application.score}\n**Accepted by:** ${req.session.user.username}`,
           fields: [
             {
               name: "📊 Details",
-              value: `\`\`\`\nApplication ID: ${application.id}\nStatus: ACCEPTED\nRole Assignment: SUCCESS\nDM Sent: ${roleResult.dmSent ? "YES" : "NO"}\nTime: ${new Date().toLocaleString()}\n\`\`\``,
+              value: `\`\`\`\nApplication ID: ${application.id}\nStatus: ACCEPTED\nRole Assignment: ${roleResult.success ? "SUCCESS" : "FAILED"}\nError: ${roleResult.error || "None"}\nDM Sent: ${roleResult.dmSent ? "YES" : "NO"}\nTime: ${new Date().toLocaleString()}\n\`\`\``,
               inline: false
             }
           ],
-          color: 0x3ba55c,
+          color: embedColor,
           timestamp: new Date().toISOString(),
           footer: {
             text: "Void Esports Admin Action"
@@ -1781,28 +1855,48 @@ app.post("/admin/accept/:id", async (req, res) => {
         
         await axios.post(process.env.DISCORD_WEBHOOK_URL, {
           embeds: [embed],
-          username: "Admin System",
-          avatar_url: "https://cdn.discordapp.com/attachments/1061186659113721938/1061186659403133058/void_esports_logo.png"
+          username: "Admin System"
         });
+        console.log(`✅ Webhook notification sent`);
       } catch (webhookError) {
         console.error("Webhook error:", webhookError.message);
       }
     }
     
-    res.json({ 
-      success: true, 
-      message: "Application accepted and role assigned successfully",
-      roleAssigned: true,
-      dmSent: roleResult.dmSent || false,
-      application: {
-        id: application.id,
-        username: application.discord_username,
-        score: application.score
-      }
-    });
+    // Return appropriate response
+    if (roleResult.success) {
+      res.json({ 
+        success: true, 
+        message: "Application accepted and role assigned successfully!",
+        roleAssigned: true,
+        dmSent: roleResult.dmSent || false,
+        application: {
+          id: application.id,
+          username: application.discord_username,
+          score: application.score,
+          role: roleResult.details?.role || 'Mod Role'
+        }
+      });
+    } else {
+      res.json({ 
+        success: false, 
+        message: "Application accepted but role assignment failed",
+        error: roleResult.error || "Unknown error",
+        roleAssigned: false,
+        dmSent: false,
+        application: {
+          id: application.id,
+          username: application.discord_username,
+          score: application.score
+        }
+      });
+    }
+    
+    console.log(`✅ ========== APPLICATION ${req.params.id} PROCESSING COMPLETE ==========\n`);
     
   } catch (err) {
-    console.error("Accept error:", err);
+    console.error("❌ CRITICAL ERROR in accept endpoint:", err.message);
+    console.error("Stack trace:", err.stack);
     res.status(500).json({ 
       success: false, 
       error: err.message,
@@ -1813,7 +1907,7 @@ app.post("/admin/accept/:id", async (req, res) => {
 
 app.post("/admin/reject/:id", async (req, res) => {
   try {
-    console.log(`\n🔴 REJECTING APPLICATION ${req.params.id}`);
+    console.log(`\n🔴 ========== REJECTING APPLICATION ${req.params.id} ==========`);
     
     // Check if admin is authenticated
     if (!req.session.user || !req.session.isAdmin) {
@@ -1841,14 +1935,15 @@ app.post("/admin/reject/:id", async (req, res) => {
     // Send rejection DM (skip for test users)
     let dmSent = false;
     if (!isTestUser) {
-      console.log(`📨 Sending rejection DM to ${application.discord_username}...`);
+      console.log(`📨 Step 1: Sending rejection DM to ${application.discord_username}...`);
       dmSent = await sendRejectionDM(application.discord_id, application.discord_username, reason);
-      console.log(`✅ Rejection DM ${dmSent ? 'sent' : 'failed'}`);
+      console.log(`✅ Rejection DM ${dmSent ? 'sent successfully' : 'failed to send'}`);
     } else {
       console.log(`⚠️ Skipping DM for test user: ${application.discord_username}`);
     }
     
     // Update database
+    console.log(`💾 Step 2: Updating database...`);
     const { error: updateError } = await supabase
       .from("applications")
       .update({ 
@@ -1861,9 +1956,12 @@ app.post("/admin/reject/:id", async (req, res) => {
       })
       .eq("id", req.params.id);
     
-    if (updateError) throw updateError;
+    if (updateError) {
+      console.error("Database update error:", updateError);
+      throw updateError;
+    }
     
-    console.log(`✅ Application ${req.params.id} marked as rejected`);
+    console.log(`✅ Database updated successfully`);
     
     // Send webhook notification
     if (process.env.DISCORD_WEBHOOK_URL) {
@@ -1887,13 +1985,15 @@ app.post("/admin/reject/:id", async (req, res) => {
         
         await axios.post(process.env.DISCORD_WEBHOOK_URL, {
           embeds: [embed],
-          username: "Admin System",
-          avatar_url: "https://cdn.discordapp.com/attachments/1061186659113721938/1061186659403133058/void_esports_logo.png"
+          username: "Admin System"
         });
+        console.log(`✅ Webhook notification sent`);
       } catch (webhookError) {
         console.error("Webhook error:", webhookError.message);
       }
     }
+    
+    console.log(`✅ ========== APPLICATION ${req.params.id} REJECTED SUCCESSFULLY ==========\n`);
     
     res.json({ 
       success: true, 
@@ -1908,7 +2008,8 @@ app.post("/admin/reject/:id", async (req, res) => {
     });
     
   } catch (err) {
-    console.error("Reject error:", err);
+    console.error("❌ Reject error:", err.message);
+    console.error("Stack trace:", err.stack);
     res.status(500).json({ 
       success: false, 
       error: err.message,
@@ -2203,7 +2304,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`
 ╔══════════════════════════════════════════════════════════════════════╗
-║                VOID ESPORTS MOD TEST SERVER v2.1                    ║
+║                VOID ESPORTS MOD TEST SERVER v2.2                    ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║ 🚀 Server running on port ${PORT}                                  ║
 ║ 🤖 Discord Bot: ${botReady ? "✅ Connected" : "🔄 Connecting..."}   ║
