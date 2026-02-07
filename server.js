@@ -36,7 +36,18 @@ bot.on('ready', () => {
   console.log(`Discord bot ready as ${bot.user.tag}`);
 });
 
-/* ================= ADMIN ACTIONS ================= */
+/* ================= HELPER FUNCTIONS ================= */
+
+// Function to escape HTML for safety
+function escapeHtml(text) {
+  if (!text) return '';
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+}
 
 // Function to send DM to user
 async function sendDMToUser(discordId, title, description, color, footer = null) {
@@ -1350,16 +1361,29 @@ app.get("/admin", async (req, res) => {
       const username = app.discord_username.toLowerCase();
       const isTestUser = username.includes('test') || username.includes('bot') || app.discord_id.includes('test');
       
+      // Safely escape HTML content
+      const safeUsername = escapeHtml(app.discord_username);
+      const safeId = escapeHtml(app.discord_id);
+      const safeScore = escapeHtml(app.score || '0/8');
+      const safeReviewedBy = app.reviewed_by ? escapeHtml(app.reviewed_by) : '';
+      const safeRejectionReason = app.rejection_reason ? escapeHtml(app.rejection_reason) : '';
+      
+      // Safely escape conversation log
+      let safeConversationLog = '';
+      if (app.conversation_log) {
+        safeConversationLog = escapeHtml(app.conversation_log.substring(0, 1500));
+      }
+      
       html += `
         <div class="application-card ${app.status}" id="app-${app.id}" data-status="${app.status}">
           <div class="app-header">
             <div class="app-user">
-              <div class="app-avatar">${app.discord_username.charAt(0).toUpperCase()}</div>
+              <div class="app-avatar">${safeUsername.charAt(0).toUpperCase()}</div>
               <div class="app-info">
-                <h3>${app.discord_username} ${isTestUser ? '<span class="test-user-badge">TEST</span>' : ''}</h3>
-                <p>ID: ${app.discord_id} • ${new Date(app.created_at).toLocaleString()}</p>
-                ${app.reviewed_by ? `<div class="reviewed-by">Reviewed by: ${app.reviewed_by} on ${new Date(app.reviewed_at).toLocaleDateString()}</div>` : ''}
-                ${app.rejection_reason ? `<div class="rejection-reason"><strong>Rejection Reason:</strong> ${app.rejection_reason}</div>` : ''}
+                <h3>${safeUsername} ${isTestUser ? '<span class="test-user-badge">TEST</span>' : ''}</h3>
+                <p>ID: ${safeId} • ${new Date(app.created_at).toLocaleString()}</p>
+                ${app.reviewed_by ? `<div class="reviewed-by">Reviewed by: ${safeReviewedBy} on ${new Date(app.reviewed_at).toLocaleDateString()}</div>` : ''}
+                ${app.rejection_reason ? `<div class="rejection-reason"><strong>Rejection Reason:</strong> ${safeRejectionReason}</div>` : ''}
               </div>
             </div>
             <div class="app-status status-${app.status}">${app.status.toUpperCase()}</div>
@@ -1383,7 +1407,7 @@ app.get("/admin", async (req, res) => {
         html += `
               <div class="conversation-log">
                 <h4 style="margin: 0 0 10px 0; color: #5865f2;"><i class="fas fa-comments"></i> Conversation Log:</h4>
-                <pre>${escapeHtml(app.conversation_log.substring(0, 1500))}${app.conversation_log.length > 1500 ? '...' : ''}</pre>
+                <pre>${safeConversationLog}${app.conversation_log.length > 1500 ? '...' : ''}</pre>
                 ${app.conversation_log.length > 1500 ? 
                   `<button class="view-full-log" onclick="viewFullLog(${app.id}, 'conversation')">View Full Conversation Log (${app.conversation_log.length} chars)</button>` : ''}
               </div>
@@ -1395,13 +1419,22 @@ app.get("/admin", async (req, res) => {
         try {
           const qna = JSON.parse(app.questions_with_answers);
           if (Array.isArray(qna) && qna.length > 0) {
+            // Safely escape Q&A content
+            const safeQna = qna.slice(0, 3).map((q, i) => ({
+              question: escapeHtml(q.question.substring(0, 80)),
+              questionFull: q.question,
+              answer: escapeHtml(q.answer.substring(0, 80)),
+              answerFull: q.answer,
+              correct: q.correct
+            }));
+            
             html += `
               <div class="qna-section">
                 <h4 style="margin: 0 0 10px 0; color: #f59e0b;"><i class="fas fa-question-circle"></i> Questions & Answers:</h4>
-                ${qna.slice(0, 3).map((q, i) => `
+                ${safeQna.map((q, i) => `
                   <div class="qna-item">
-                    <strong>Q${i+1}:</strong> ${escapeHtml(q.question.substring(0, 80))}${q.question.length > 80 ? '...' : ''}<br>
-                    <strong>A${i+1}:</strong> ${escapeHtml(q.answer.substring(0, 80))}${q.answer.length > 80 ? '...' : ''}<br>
+                    <strong>Q${i+1}:</strong> ${q.question}${q.questionFull.length > 80 ? '...' : ''}<br>
+                    <strong>A${i+1}:</strong> ${q.answer}${q.answerFull.length > 80 ? '...' : ''}<br>
                     <span class="qna-status ${q.correct ? 'correct' : 'incorrect'}">
                       ${q.correct ? '✅ Correct' : '❌ Incorrect'}
                     </span>
@@ -1418,10 +1451,11 @@ app.get("/admin", async (req, res) => {
       
       // Show simple answers if no conversation log
       if (app.answers && !app.conversation_log) {
+        const safeAnswers = escapeHtml(app.answers.substring(0, 500));
         html += `
               <div class="simple-answers">
                 <h4 style="margin: 0 0 10px 0;"><i class="fas fa-file-alt"></i> Answers:</h4>
-                <pre>${escapeHtml(app.answers.substring(0, 500))}${app.answers.length > 500 ? '...' : ''}</pre>
+                <pre>${safeAnswers}${app.answers.length > 500 ? '...' : ''}</pre>
               </div>
         `;
       }
@@ -1462,8 +1496,8 @@ app.get("/admin", async (req, res) => {
         <div class="reject-modal" id="rejectModal-${app.id}">
           <div class="modal-content">
             <h3 style="color: var(--discord-red); margin-bottom: 15px;"><i class="fas fa-times-circle"></i> Reject Application</h3>
-            <p><strong>User:</strong> ${app.discord_username}</p>
-            <p><strong>Score:</strong> ${app.score}</p>
+            <p><strong>User:</strong> ${safeUsername}</p>
+            <p><strong>Score:</strong> ${safeScore}</p>
             <p><strong>Submitted:</strong> ${new Date(app.created_at).toLocaleString()}</p>
             
             <div class="reject-reasons">
@@ -1501,8 +1535,9 @@ app.get("/admin", async (req, res) => {
         </div>
         
         <script>
-          // Escape HTML for safety
+          // Escape HTML for safety (also defined on client side for consistency)
           function escapeHtml(text) {
+            if (!text) return '';
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
@@ -1669,13 +1704,13 @@ app.get("/admin", async (req, res) => {
                 let content = \`
                   <div style="margin-bottom: 20px;">
                     <h4 style="color: var(--void-neon);">Application Details</h4>
-                    <p><strong>Username:</strong> \${app.discord_username}</p>
-                    <p><strong>Discord ID:</strong> \${app.discord_id}</p>
-                    <p><strong>Score:</strong> \${app.score}</p>
+                    <p><strong>Username:</strong> \${escapeHtml(app.discord_username)}</p>
+                    <p><strong>Discord ID:</strong> \${escapeHtml(app.discord_id)}</p>
+                    <p><strong>Score:</strong> \${escapeHtml(app.score)}</p>
                     <p><strong>Submitted:</strong> \${new Date(app.created_at).toLocaleString()}</p>
                     <p><strong>Status:</strong> <span class="status-\${app.status}">\${app.status.toUpperCase()}</span></p>
-                    \${app.reviewed_by ? \`<p><strong>Reviewed by:</strong> \${app.reviewed_by} on \${new Date(app.reviewed_at).toLocaleString()}</p>\` : ''}
-                    \${app.rejection_reason ? \`<p><strong>Rejection Reason:</strong> \${app.rejection_reason}</p>\` : ''}
+                    \${app.reviewed_by ? \`<p><strong>Reviewed by:</strong> \${escapeHtml(app.reviewed_by)} on \${new Date(app.reviewed_at).toLocaleString()}</p>\` : ''}
+                    \${app.rejection_reason ? \`<p><strong>Rejection Reason:</strong> \${escapeHtml(app.rejection_reason)}</p>\` : ''}
                   </div>
                 \`;
                 
@@ -2527,4 +2562,3 @@ app.listen(PORT, () => {
 ╚══════════════════════════════════════════════════════════════════════╝
   `);
 });
-
