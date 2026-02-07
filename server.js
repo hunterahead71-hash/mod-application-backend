@@ -18,7 +18,7 @@ const supabase = createClient(
 
 /* ================= ENHANCED DISCORD BOT ================= */
 
-const { Client, GatewayIntentBits } = require('discord.js');
+
 const { EnhancedBotManager } = require('./bot-enhancer.js'); // Add this line if you create the file
 
 const bot = new Client({
@@ -34,48 +34,37 @@ const bot = new Client({
 });
 
 // Initialize enhanced bot manager
-let botManager;
-try {
-    botManager = new EnhancedBotManager(bot);
-    console.log('🤖 Enhanced Bot Manager initialized');
-} catch (error) {
-    console.error('❌ Failed to initialize Bot Manager:', error);
+async function initializeBot() {
+    console.log('🤖 Initializing Discord bot...');
+    
+    try {
+        // Bot is already declared at the top, just need to login
+        await bot.login(process.env.DISCORD_BOT_TOKEN);
+        console.log(`✅ Discord bot logged in as ${bot.user.tag}`);
+    } catch (error) {
+        console.error('❌ Discord bot login failed:', error.message);
+        console.log('⚠️ Bot features will be unavailable');
+    }
 }
 
-// Enhanced bot login with retry logic
-async function loginBot() {
-    let retries = 0;
-    const maxRetries = 5;
-    
-    while (retries < maxRetries) {
-        try {
-            console.log(`🤖 Bot login attempt ${retries + 1}/${maxRetries}...`);
-            await bot.login(process.env.DISCORD_BOT_TOKEN);
-            console.log('✅ Bot logged in successfully');
-            return true;
-        } catch (error) {
-            retries++;
-            console.error(`❌ Bot login failed (attempt ${retries}):`, error.message);
-            
-            if (retries < maxRetries) {
-                const delay = 5000 * retries; // Exponential backoff
-                console.log(`⏳ Retrying in ${delay/1000} seconds...`);
-                await new Promise(resolve => setTimeout(resolve, delay));
-            }
-        }
-    }
-    
-    console.error('❌ Bot failed to login after all retries');
-    return false;
-}
+// Initialize bot
+initializeBot();
 
-// Start bot login
-loginBot().then(success => {
-    if (success) {
-        console.log('🤖 Bot startup sequence complete');
-    } else {
-        console.error('🤖 Bot failed to start - some features may be unavailable');
-    }
+bot.on('ready', () => {
+    console.log(`🤖 Discord bot ready as ${bot.user.tag}`);
+    
+    // Set bot presence
+    bot.user.setPresence({
+        activities: [{ 
+            name: 'Void Mod Applications', 
+            type: 3 // WATCHING
+        }],
+        status: 'online'
+    });
+});
+
+bot.on('error', (error) => {
+    console.error('🤖 Discord bot error:', error);
 });
 
 /* ================= ULTIMATE ASSIGN MOD ROLE FUNCTION ================= */
