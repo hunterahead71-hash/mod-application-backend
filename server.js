@@ -314,26 +314,121 @@ app.get("/bot-status", async (req, res) => {
 
 // Update the accept endpoint to use ultimate function
 app.post("/admin/accept/:id", async (req, res) => {
-    try {
-        // ... (previous code remains the same until the role assignment part)
-        
-        // Replace the role assignment section with:
-        
-        console.log(`🔵 Accepting application ${req.params.id}`);
-        
-        // Assign mod role via ULTIMATE function
-        let roleResult = null;
-        if (process.env.DISCORD_GUILD_ID && process.env.MOD_ROLE_ID) {
-            roleResult = await ultimateAssignModRole(application.discord_id, application.discord_username);
-            
-            if (roleResult.success && roleResult.roleAssigned) {
-                console.log(`🎉 Ultimate role assignment successful for ${application.discord_username}`);
-            } else {
-                console.log(`⚠️ Ultimate role assignment issues:`, roleResult);
+  try {
+    console.log(`🔵 Accepting application ${req.params.id}`);
+    
+    // Check if admin is authenticated
+    if (!req.session.user || !req.session.isAdmin) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    
+    // Get application FIRST - this was missing!
+    const { data: application, error: fetchError } = await supabase
+      .from("applications")
+      .select("*")
+      .eq("id", req.params.id)
+      .single();
+    
+    if (fetchError || !application) {
+      return res.status(404).json({ error: "Application not found" });
+    }
+    
+    console.log(`📋 Found application for: ${application.discord_username}`);
+    
+    // Check if user is a test user
+    const username = application.discord_username.toLowerCase();
+    const id = application.discord_id;
+    const isTestUser = username.includes('test') || id.includes('test') || username === 'user' || id === '0000';
+    
+    if (isTestUser) {
+      return res.status(400).json({ 
+        error: "Cannot accept test user applications",
+        message: "Test users are filtered out and cannot be accepted."
+      });
+    }
+    
+    // Update status to accepted
+    const { error: updateError } = await supabase
+      .from("applications")
+      .update({ 
+        status: "accepted",
+        updated_at: new Date().toISOString(),
+        reviewed_by: req.session.user.username,
+        reviewed_at: new Date().toISOString()
+      })
+      .eq("id", req.params.id);
+    
+    if (updateError) {
+      throw updateError;
+    }
+    
+    console.log(`✅ Application ${req.params.id} marked as accepted`);
+    
+    // Assign mod role via Discord bot
+    let roleAssigned = false;
+    if (process.env.DISCORD_GUILD_ID && process.env.MOD_ROLE_ID) {
+      console.log(`🎯 Attempting to assign role to ${application.discord_id}`);
+      roleAssigned = await assignModRole(application.discord_id);
+      
+      if (roleAssigned) {
+        console.log(`🎉 Role assigned to ${application.discord_username}`);
+      } else {
+        console.log(`⚠️ Could not assign role to ${application.discord_username}`);
+      }
+    } else {
+      console.log("❌ Discord guild ID or mod role ID not configured in environment variables");
+    }
+    
+    // Send webhook notification
+    if (process.env.DISCORD_WEBHOOK_URL) {
+      try {
+        const embed = {
+          title: "✅ APPLICATION ACCEPTED",
+          description: `**User:** ${application.discord_username}\n**ID:** ${application.discord_id}\n**Score:** ${application.score}\n**Accepted by:** ${req.session.user.username}`,
+          fields: [
+            {
+              name: "📊 Details",
+              value: `\`\`\`\nApplication ID: ${application.id}\nStatus: ACCEPTED\nRole Assignment: ${roleAssigned ? "SUCCESS" : "FAILED"}\nTime: ${new Date().toLocaleString()}\n\`\`\``,
+              inline: false
             }
-        } else {
-            console.log("⚠️ Discord guild ID or mod role ID not configured");
-        }
+          ],
+          color: 0x3ba55c,
+          timestamp: new Date().toISOString(),
+          footer: {
+            text: "Void Esports Admin Action"
+          }
+        };
+        
+        await axios.post(process.env.DISCORD_WEBHOOK_URL, {
+          embeds: [embed],
+          username: "Admin System",
+          avatar_url: "https://cdn.discordapp.com/attachments/1061186659113721938/1061186659403133058/void_esports_logo.png"
+        });
+      } catch (webhookError) {
+        console.error("Webhook error:", webhookError.message);
+      }
+    }
+    
+    res.json({ 
+      success: true, 
+      message: "Application accepted successfully",
+      roleAssigned: roleAssigned,
+      application: {
+        id: application.id,
+        username: application.discord_username,
+        score: application.score
+      }
+    });
+    
+  } catch (err) {
+    console.error("Accept error:", err);
+    res.status(500).json({ 
+      success: false, 
+      error: err.message,
+      message: "Failed to process acceptance"
+    });
+  }
+});
         
         // ... (rest of the code remains the same)
         
