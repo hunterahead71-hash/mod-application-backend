@@ -34,9 +34,8 @@ bot.on('ready', () => {
   console.log(`Discord bot ready as ${bot.user.tag}`);
 });
 
-/* ================= CRITICAL FIX: CORS & SESSION ================= */
+/* ================= FIXED CORS & SESSION ================= */
 
-// 1. CORS configuration
 app.use(
   cors({
     origin: function(origin, callback) {
@@ -48,7 +47,6 @@ app.use(
         "https://mod-application-backend.onrender.com"
       ];
       
-      // Allow requests with no origin (like mobile apps or curl requests)
       if (!origin || allowedOrigins.indexOf(origin) !== -1) {
         callback(null, true);
       } else {
@@ -62,39 +60,37 @@ app.use(
   })
 );
 
-// Handle preflight requests
 app.options('*', cors());
-
 app.use(express.json());
 
-// 2. Session configuration with MemoryStore for production
+// CRITICAL FIX: Session configuration
 app.use(
   session({
     store: new MemoryStore({
-      checkPeriod: 86400000 // prune expired entries every 24h
+      checkPeriod: 86400000
     }),
     name: "mod-app-session",
     secret: process.env.SESSION_SECRET || "4d7a9b2f5c8e1a3b6d9f0c2e5a8b1d4f7c0e3a6b9d2f5c8e1a4b7d0c3f6a9b2e5c8f1b4d7e0a3c6b9d2f5e8c1b4a7d0c3f6b9e2c5a8d1b4e7c0a3d6b9e2c5f8",
-    resave: false,
-    saveUninitialized: false,
-    proxy: true, // IMPORTANT for Render
+    resave: true, // CHANGED TO TRUE
+    saveUninitialized: true, // CHANGED TO TRUE
+    proxy: true,
     cookie: {
-      secure: true, // Must be true for HTTPS
-      sameSite: 'none', // CRITICAL for cross-domain
+      secure: true,
+      sameSite: 'none',
       maxAge: 24 * 60 * 60 * 1000,
       httpOnly: true,
-      // DO NOT SET domain property for cross-domain
     }
   })
 );
 
-// Debug middleware to log all requests
+// Debug middleware
 app.use((req, res, next) => {
   console.log(`\n=== ${new Date().toISOString()} ${req.method} ${req.path} ===`);
   console.log('Origin:', req.headers.origin);
   console.log('Cookie Header:', req.headers.cookie || 'No cookies');
   console.log('Session ID:', req.sessionID);
   console.log('Session User:', req.session.user || 'No user');
+  console.log('Session Test Intent:', req.session.testIntent || 'No intent');
   console.log('==============================\n');
   next();
 });
@@ -107,32 +103,15 @@ app.get("/debug-session", (req, res) => {
     user: req.session.user || 'No user',
     isAdmin: req.session.isAdmin || false,
     testIntent: req.session.testIntent || 'No intent',
-    cookies: req.headers.cookie || 'No cookies',
-    headers: {
-      origin: req.headers.origin,
-      cookie: req.headers.cookie
-    }
+    cookies: req.headers.cookie || 'No cookies'
   });
 });
 
-app.get("/set-test-session", (req, res) => {
-  req.session.user = {
-    id: "123456789012345678",
-    username: "TestAdmin",
-    discriminator: "0001",
-    avatar: null,
-    public_flags: 0,
-    flags: 0,
-    banner: null,
-    accent_color: null,
-    global_name: null,
-    avatar_decoration: null,
-    banner_color: null,
-    mfa_enabled: false,
-    locale: "en-US",
-    premium_type: 0
-  };
-  req.session.isAdmin = true;
+/* ================= TEST INTENT - FIXED ================= */
+
+app.get("/set-test-intent", (req, res) => {
+  console.log("Setting test intent...");
+  req.session.testIntent = "test";
   req.session.save((err) => {
     if (err) {
       console.error("Session save error:", err);
@@ -140,56 +119,16 @@ app.get("/set-test-session", (req, res) => {
     }
     res.json({ 
       success: true, 
-      message: "Test session set",
-      user: req.session.user,
+      message: "Test intent set",
+      testIntent: req.session.testIntent,
       sessionId: req.sessionID
     });
   });
 });
 
-/* ================= TEST AUTH FLOW ================= */
-
-app.get("/test-auth-flow", (req, res) => {
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Test Auth Flow</title>
-      <style>
-        body { font-family: Arial, sans-serif; padding: 50px; }
-        .test-buttons { margin: 20px 0; }
-        .btn { 
-          display: inline-block; 
-          margin: 10px; 
-          padding: 15px 25px; 
-          background: #5865f2; 
-          color: white; 
-          text-decoration: none; 
-          border-radius: 8px; 
-          font-weight: bold; 
-        }
-      </style>
-    </head>
-    <body>
-      <h1>Test Authentication Flow</h1>
-      
-      <div class="test-buttons">
-        <a href="/set-intent/test" class="btn" target="_blank">1. Set Test Intent</a>
-        <a href="/auth/discord" class="btn">2. Login with Discord</a>
-        <a href="/debug-session" class="btn" target="_blank">3. Debug Session</a>
-        <a href="/admin" class="btn">4. Go to Admin</a>
-      </div>
-      
-      <p>Test Flow: Click 1, then 2, then check if you're redirected to test or admin</p>
-    </body>
-    </html>
-  `);
-});
-
-/* ================= TEST INTENT ================= */
-
 app.post("/set-intent/:intent", (req, res) => {
   const intent = req.params.intent;
+  console.log(`Setting intent: ${intent}`);
   req.session.testIntent = intent;
   req.session.save((err) => {
     if (err) {
@@ -200,22 +139,11 @@ app.post("/set-intent/:intent", (req, res) => {
   });
 });
 
-app.post("/clear-test-intent", (req, res) => {
-  req.session.testIntent = false;
-  req.session.save((err) => {
-    if (err) {
-      console.error("Session save error:", err);
-      return res.status(500).json({ error: "Session error" });
-    }
-    res.json({ success: true });
-  });
-});
-
-/* ================= DISCORD AUTH ================= */
+/* ================= DISCORD AUTH - FIXED ================= */
 
 app.get("/auth/discord", (req, res) => {
   console.log("Discord auth initiated");
-  console.log("Session testIntent:", req.session.testIntent);
+  console.log("Current session testIntent:", req.session.testIntent);
   
   const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
     process.env.DISCORD_CLIENT_ID
@@ -228,10 +156,14 @@ app.get("/auth/discord", (req, res) => {
 
 app.get("/auth/discord/callback", async (req, res) => {
   try {
-    console.log("Discord callback received");
+    console.log("\n=== DISCORD CALLBACK START ===");
+    console.log("Session testIntent:", req.session.testIntent);
+    console.log("Session ID:", req.sessionID);
+    
     const code = req.query.code;
     if (!code) return res.status(400).send("No code provided");
 
+    // Get Discord token
     const tokenRes = await axios.post(
       "https://discord.com/api/oauth2/token",
       new URLSearchParams({
@@ -244,6 +176,7 @@ app.get("/auth/discord/callback", async (req, res) => {
       { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
     );
 
+    // Get user info
     const userRes = await axios.get(
       "https://discord.com/api/users/@me",
       {
@@ -254,19 +187,23 @@ app.get("/auth/discord/callback", async (req, res) => {
     );
 
     console.log("Discord user authenticated:", userRes.data.username);
+    console.log("User ID:", userRes.data.id);
 
-    // Save Discord user in session
+    // Save user in session
     req.session.user = userRes.data;
     req.session.isAdmin = false;
     
     // Check if admin
     const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
+    console.log("Admin IDs:", adminIds);
+    console.log("User ID for check:", userRes.data.id);
+    
     if (adminIds.includes(userRes.data.id)) {
       req.session.isAdmin = true;
       console.log("User is admin:", userRes.data.username);
     }
     
-    // SAVE SESSION BEFORE REDIRECTING
+    // SAVE SESSION
     req.session.save((err) => {
       if (err) {
         console.error("Session save error in callback:", err);
@@ -283,37 +220,52 @@ app.get("/auth/discord/callback", async (req, res) => {
         `);
       }
       
-      console.log("Session saved successfully, redirecting...");
-      console.log("Session ID:", req.sessionID);
-      console.log("User:", req.session.user.username);
+      console.log("Session saved successfully!");
+      console.log("User in session:", req.session.user.username);
       console.log("Is Admin:", req.session.isAdmin);
       console.log("Test Intent:", req.session.testIntent);
       
-      // For admins, redirect to admin panel
+      // FOR ADMINS: Redirect to admin panel
       if (req.session.isAdmin) {
         console.log("Redirecting admin to /admin");
-        return res.redirect("/admin");
-      }
-
-      // Check if user came from "take test" button
-      if (req.session.testIntent === "test") {
-        console.log("User has test intent, redirecting to test");
-        req.session.testIntent = false;
+        req.session.testIntent = null; // Clear test intent for admins
         req.session.save(() => {
-          // Create authentication token for frontend
-          const authToken = Buffer.from(`${userRes.data.id}:${Date.now()}`).toString('base64');
-          
-          // Redirect to test page with ALL necessary data in URL
-          const frontendUrl = `https://hunterahead71-hash.github.io/void.training/?startTest=1&discord_username=${encodeURIComponent(userRes.data.username)}&discord_id=${userRes.data.id}&auth_token=${authToken}&timestamp=${Date.now()}`;
-          console.log("Redirecting to test:", frontendUrl);
-          
-          return res.redirect(frontendUrl);
+          return res.redirect("/admin");
         });
         return;
       }
-
-      // Normal user without test intent
-      console.log("Redirecting normal user to homepage");
+      
+      // FOR REGULAR USERS WITH TEST INTENT: Redirect to test
+      if (req.session.testIntent === "test") {
+        console.log("User has test intent, redirecting to test interface");
+        req.session.testIntent = null; // Clear after use
+        
+        req.session.save(() => {
+          // Create redirect URL with user data
+          const frontendUrl = `https://hunterahead71-hash.github.io/void.training/?startTest=1&discord_username=${encodeURIComponent(userRes.data.username)}&discord_id=${userRes.data.id}&timestamp=${Date.now()}`;
+          console.log("Redirecting to test:", frontendUrl);
+          
+          return res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+              <title>Redirecting to Test...</title>
+              <script>
+                window.location.href = "${frontendUrl}";
+              </script>
+            </head>
+            <body>
+              <p>Redirecting to test... Please wait.</p>
+              <p>If you are not redirected, <a href="${frontendUrl}">click here</a>.</p>
+            </body>
+            </html>
+          `);
+        });
+        return;
+      }
+      
+      // FOR REGULAR USERS WITHOUT TEST INTENT: Redirect to homepage
+      console.log("Regular user without test intent, redirecting to homepage");
       return res.redirect("https://hunterahead71-hash.github.io/void.training/");
     });
 
@@ -336,13 +288,12 @@ app.get("/auth/discord/callback", async (req, res) => {
 /* ================= AUTH CHECK ================= */
 
 app.get("/me", (req, res) => {
-  console.log("Auth check called - Session:", req.session.user);
+  console.log("Auth check called");
   
   if (!req.session.user) {
     return res.status(401).json({ 
       authenticated: false,
-      message: "No active session",
-      sessionId: req.sessionID
+      message: "No active session"
     });
   }
 
@@ -354,92 +305,17 @@ app.get("/me", (req, res) => {
   });
 });
 
-/* ================= APPLICATION ================= */
-
-app.post("/apply", async (req, res) => {
-  console.log("Apply endpoint called");
-  
-  if (!req.session.user) {
-    console.log("Apply: No user in session");
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
-  console.log("Apply: User authenticated", req.session.user.username);
-  
-  const { answers, score, discordUsername, totalQuestions, correctAnswers, wrongAnswers, testResults } = req.body;
-
-  try {
-    const { error } = await supabase.from("applications").insert({
-      discord_id: req.session.user.id,
-      discord_username: discordUsername || req.session.user.username,
-      answers: typeof answers === 'string' ? answers : JSON.stringify(answers),
-      score: score,
-      total_questions: totalQuestions || 8,
-      correct_answers: correctAnswers || 0,
-      wrong_answers: wrongAnswers || 0,
-      test_results: testResults || {},
-      status: "pending",
-      created_at: new Date().toISOString()
-    });
-
-    if (error) {
-      console.error("Supabase insert error:", error);
-      return res.status(500).json({ error: "Database error" });
-    }
-
-    res.json({ success: true, message: "Application submitted successfully" });
-  } catch (err) {
-    console.error("Apply error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-/* ================= GET APPLICATIONS ================= */
-
-app.get("/applications", async (req, res) => {
-  console.log("Get applications called");
-  
-  if (!req.session.user) {
-    console.log("Get apps: No user in session");
-    return res.status(401).json({ error: "Not authenticated" });
-  }
-
-  const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
-  if (!adminIds.includes(req.session.user.id)) {
-    console.log("Get apps: User not admin", req.session.user.id);
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
-  try {
-    const { data, error } = await supabase
-      .from("applications")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Supabase fetch error:", error);
-      return res.status(500).json({ error: "Database error" });
-    }
-
-    res.json({ applications: data });
-  } catch (err) {
-    console.error("Get applications error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-/* ================= ADMIN ================= */
+/* ================= ADMIN PAGE - FIXED ================= */
 
 app.get("/admin", async (req, res) => {
-  console.log("Admin page accessed - Full session debug:");
-  console.log("Session ID:", req.sessionID);
-  console.log("Session User:", req.session.user);
+  console.log("\n=== ADMIN PAGE ACCESS ===");
+  console.log("Session User:", req.session.user || 'No user');
   console.log("Session isAdmin:", req.session.isAdmin);
-  console.log("Cookies:", req.headers.cookie);
-  console.log("Origin:", req.headers.origin);
+  console.log("Admin IDs:", process.env.ADMIN_IDS);
   
+  // Check if user is logged in
   if (!req.session.user) {
-    console.log("Admin: No user in session");
+    console.log("No user in session, redirecting to login");
     return res.send(`
       <!DOCTYPE html>
       <html>
@@ -457,6 +333,21 @@ app.get("/admin", async (req, res) => {
             color: white;
             margin: 0;
           }
+          h1 { color: #ff0033; }
+          .login-btn {
+            display: inline-block;
+            margin: 20px;
+            padding: 15px 30px;
+            background: #5865f2;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 18px;
+          }
+          .login-btn:hover {
+            background: #4752c4;
+          }
           .debug-info {
             background: #202225;
             padding: 20px;
@@ -466,78 +357,47 @@ app.get("/admin", async (req, res) => {
             text-align: left;
             font-family: monospace;
             font-size: 12px;
-            overflow-x: auto;
-          }
-          .debug-title {
-            color: #ff0033;
-            font-weight: bold;
-            margin-bottom: 10px;
-          }
-          .test-links {
-            margin: 20px 0;
-          }
-          .test-links a {
-            display: inline-block;
-            margin: 5px;
-            padding: 10px 15px;
-            background: #5865f2;
-            color: white;
-            text-decoration: none;
-            border-radius: 5px;
-            font-size: 14px;
           }
         </style>
       </head>
       <body>
         <h1><i class="fas fa-exclamation-triangle"></i> Not Logged In</h1>
-        <p>Your session has expired or cookies are blocked.</p>
+        <p>You need to log in with Discord to access the admin panel.</p>
         
-        <div class="test-links">
-          <a href="/auth/discord"><i class="fab fa-discord"></i> Login with Discord</a>
-          <a href="/set-test-session" target="_blank"><i class="fas fa-vial"></i> Set Test Session</a>
-          <a href="/debug-session" target="_blank"><i class="fas fa-bug"></i> Debug Session</a>
-        </div>
+        <a href="/auth/discord" class="login-btn">
+          <i class="fab fa-discord"></i> Login with Discord
+        </a>
         
         <div class="debug-info">
-          <div class="debug-title">Session Debug Info:</div>
-          <div><strong>Session ID:</strong> ${req.sessionID || 'None'}</div>
-          <div><strong>User in Session:</strong> ${req.session.user ? 'Yes' : 'No'}</div>
-          <div><strong>Cookie Header:</strong> ${req.headers.cookie || 'None'}</div>
-          <div><strong>Origin Header:</strong> ${req.headers.origin || 'None'}</div>
+          <strong>Debug Info:</strong><br>
+          Session ID: ${req.sessionID || 'None'}<br>
+          User in Session: ${req.session.user ? 'Yes' : 'No'}<br>
+          Cookie Header: ${req.headers.cookie || 'None'}
         </div>
-        
-        <div style="margin-top: 30px; padding: 20px; background: #202225; border-radius: 10px; max-width: 800px; margin: 20px auto;">
-          <h3><i class="fas fa-question-circle"></i> Troubleshooting Steps:</h3>
-          <ol style="text-align: left; max-width: 600px; margin: 0 auto;">
-            <li>Click "Set Test Session" link above first</li>
-            <li>Then click "Debug Session" to see if session was saved</li>
-            <li>If session shows, then click "Login with Discord"</li>
-            <li>Make sure cookies are enabled in your browser</li>
-            <li>Try Chrome/Edge (Firefox sometimes blocks cross-site cookies)</li>
-            <li>Make sure you're not in Incognito/Private mode</li>
-          </ol>
-        </div>
-        
-        <p style="margin-top: 30px; font-size: 12px; color: #72767d;">
-          If you keep seeing this error, the issue is with browser cookies not being saved between GitHub Pages and Render.
-        </p>
       </body>
       </html>
     `);
   }
   
+  // Check if user is admin
   const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
+  const userId = req.session.user.id;
   
-  // If user is NOT admin, show access denied
-  if (!adminIds.includes(req.session.user.id)) {
-    console.log("Admin: User not in admin list", req.session.user.id);
-    console.log("Admin IDs required:", adminIds);
+  console.log("Checking if user is admin:");
+  console.log("User ID:", userId);
+  console.log("Admin IDs:", adminIds);
+  console.log("Is user in admin list?", adminIds.includes(userId));
+  
+  if (!adminIds.includes(userId)) {
+    console.log("User is NOT an admin");
     return res.send(`
       <!DOCTYPE html>
       <html>
       <head>
         <title>Access Denied</title>
         <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
           body { 
             font-family: Arial, sans-serif; 
@@ -545,14 +405,16 @@ app.get("/admin", async (req, res) => {
             padding: 50px; 
             background: #36393f;
             color: white;
+            margin: 0;
           }
           h1 { color: #ff0033; }
           .user-info {
             background: #202225;
             padding: 20px;
             border-radius: 10px;
-            margin: 20px auto;
-            max-width: 500px;
+            margin: 30px auto;
+            max-width: 600px;
+            text-align: left;
           }
           .contact-link {
             color: #5865f2;
@@ -561,6 +423,22 @@ app.get("/admin", async (req, res) => {
           }
           .contact-link:hover {
             text-decoration: underline;
+          }
+          .action-buttons {
+            margin-top: 30px;
+          }
+          .action-btn {
+            display: inline-block;
+            margin: 10px;
+            padding: 12px 24px;
+            background: #5865f2;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-weight: bold;
+          }
+          .logout-btn {
+            background: #ed4245;
           }
         </style>
       </head>
@@ -572,20 +450,28 @@ app.get("/admin", async (req, res) => {
           <p><strong>Your Discord:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
           <p><strong>Your ID:</strong> ${req.session.user.id}</p>
           <p><strong>Required Admin IDs:</strong> ${adminIds.join(', ')}</p>
+          <p><strong>Your session ID:</strong> ${req.sessionID}</p>
         </div>
         
         <p>If you need admin access, contact <a href="https://discord.com/users/727888300210913310" class="contact-link" target="_blank">@nicksscold</a> on Discord.</p>
         
-        <div style="margin-top: 30px;">
-          <a href="/logout" style="color: #5865f2;">Logout</a> | 
-          <a href="https://hunterahead71-hash.github.io/void.training/" style="color: #5865f2;">Return to Training</a>
+        <div class="action-buttons">
+          <a href="/logout" class="action-btn logout-btn">
+            <i class="fas fa-sign-out-alt"></i> Logout
+          </a>
+          <a href="https://hunterahead71-hash.github.io/void.training/" class="action-btn">
+            <i class="fas fa-home"></i> Return to Training
+          </a>
+          <a href="/admin" class="action-btn">
+            <i class="fas fa-redo"></i> Try Again
+          </a>
         </div>
       </body>
       </html>
     `);
   }
 
-  console.log("Admin: User is admin, loading applications");
+  console.log("User is admin, loading applications...");
   
   try {
     const { data, error } = await supabase
@@ -608,7 +494,7 @@ app.get("/admin", async (req, res) => {
       `);
     }
 
-    // Enhanced admin HTML
+    // Admin dashboard HTML
     let html = `
       <!DOCTYPE html>
       <html>
@@ -1114,6 +1000,80 @@ app.get("/admin", async (req, res) => {
   }
 });
 
+/* ================= APPLICATION SUBMISSION ================= */
+
+app.post("/apply", async (req, res) => {
+  console.log("Apply endpoint called");
+  
+  if (!req.session.user) {
+    console.log("Apply: No user in session");
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  console.log("Apply: User authenticated", req.session.user.username);
+  
+  const { answers, score, discordUsername, totalQuestions, correctAnswers, wrongAnswers, testResults } = req.body;
+
+  try {
+    const { error } = await supabase.from("applications").insert({
+      discord_id: req.session.user.id,
+      discord_username: discordUsername || req.session.user.username,
+      answers: typeof answers === 'string' ? answers : JSON.stringify(answers),
+      score: score,
+      total_questions: totalQuestions || 8,
+      correct_answers: correctAnswers || 0,
+      wrong_answers: wrongAnswers || 0,
+      test_results: testResults || {},
+      status: "pending",
+      created_at: new Date().toISOString()
+    });
+
+    if (error) {
+      console.error("Supabase insert error:", error);
+      return res.status(500).json({ error: "Database error" });
+    }
+
+    res.json({ success: true, message: "Application submitted successfully" });
+  } catch (err) {
+    console.error("Apply error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+/* ================= GET APPLICATIONS ================= */
+
+app.get("/applications", async (req, res) => {
+  console.log("Get applications called");
+  
+  if (!req.session.user) {
+    console.log("Get apps: No user in session");
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+
+  const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
+  if (!adminIds.includes(req.session.user.id)) {
+    console.log("Get apps: User not admin", req.session.user.id);
+    return res.status(403).json({ error: "Forbidden" });
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("applications")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      console.error("Supabase fetch error:", error);
+      return res.status(500).json({ error: "Database error" });
+    }
+
+    res.json({ applications: data });
+  } catch (err) {
+    console.error("Get applications error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 /* ================= ADMIN ACTIONS ================= */
 
 app.post("/admin/accept/:id", async (req, res) => {
@@ -1281,47 +1241,15 @@ app.get("/health", (req, res) => {
   });
 });
 
-/* ================= SIMPLIFIED TEST VERIFICATION ================= */
-
-app.get("/verify-test-access", (req, res) => {
-  console.log("Test access verification called");
-  
-  if (!req.session.user) {
-    console.log("Verify: No user in session");
-    return res.status(401).json({ 
-      authorized: false, 
-      message: "Not authenticated",
-      redirect: "https://mod-application-backend.onrender.com/auth/discord"
-    });
-  }
-  
-  // Check if user has test intent
-  if (req.session.testIntent === "test") {
-    console.log("User has test intent, allowing access");
-    res.json({
-      authorized: true,
-      user: req.session.user,
-      testIntent: req.session.testIntent
-    });
-  } else {
-    console.log("User does not have test intent");
-    res.status(403).json({
-      authorized: false,
-      message: "No test access granted",
-      redirect: "https://hunterahead71-hash.github.io/void.training/"
-    });
-  }
-});
-
 /* ================= START SERVER ================= */
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`\n🚀 Server running on port ${PORT}`);
   console.log(`🌐 CORS enabled for: https://hunterahead71-hash.github.io`);
-  console.log(`🍪 Session settings: secure=true, sameSite=none`);
-  console.log(`🔧 Debug endpoints: /debug-session, /set-test-session`);
+  console.log(`🍪 Session settings: secure=true, sameSite=none, resave=true`);
+  console.log(`🔧 Debug endpoints: /debug-session`);
   console.log(`👑 Admin login: /auth/discord`);
   console.log(`🏥 Health check: /health`);
-  console.log(`🧪 Test verification: /verify-test-access\n`);
+  console.log(`🧪 Set test intent: /set-test-intent\n`);
 });
