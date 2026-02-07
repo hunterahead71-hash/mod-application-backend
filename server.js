@@ -147,6 +147,45 @@ app.get("/set-test-session", (req, res) => {
   });
 });
 
+/* ================= TEST AUTH FLOW ================= */
+
+app.get("/test-auth-flow", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Test Auth Flow</title>
+      <style>
+        body { font-family: Arial, sans-serif; padding: 50px; }
+        .test-buttons { margin: 20px 0; }
+        .btn { 
+          display: inline-block; 
+          margin: 10px; 
+          padding: 15px 25px; 
+          background: #5865f2; 
+          color: white; 
+          text-decoration: none; 
+          border-radius: 8px; 
+          font-weight: bold; 
+        }
+      </style>
+    </head>
+    <body>
+      <h1>Test Authentication Flow</h1>
+      
+      <div class="test-buttons">
+        <a href="/set-intent/test" class="btn" target="_blank">1. Set Test Intent</a>
+        <a href="/auth/discord" class="btn">2. Login with Discord</a>
+        <a href="/debug-session" class="btn" target="_blank">3. Debug Session</a>
+        <a href="/admin" class="btn">4. Go to Admin</a>
+      </div>
+      
+      <p>Test Flow: Click 1, then 2, then check if you're redirected to test or admin</p>
+    </body>
+    </html>
+  `);
+});
+
 /* ================= TEST INTENT ================= */
 
 app.post("/set-intent/:intent", (req, res) => {
@@ -482,14 +521,17 @@ app.get("/admin", async (req, res) => {
   }
   
   const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
+  
+  // If user is NOT admin, show access denied
   if (!adminIds.includes(req.session.user.id)) {
     console.log("Admin: User not in admin list", req.session.user.id);
     console.log("Admin IDs required:", adminIds);
-    return res.status(403).send(`
+    return res.send(`
       <!DOCTYPE html>
       <html>
       <head>
         <title>Access Denied</title>
+        <meta charset="UTF-8">
         <style>
           body { 
             font-family: Arial, sans-serif; 
@@ -506,22 +548,31 @@ app.get("/admin", async (req, res) => {
             margin: 20px auto;
             max-width: 500px;
           }
+          .contact-link {
+            color: #5865f2;
+            font-weight: bold;
+            text-decoration: none;
+          }
+          .contact-link:hover {
+            text-decoration: underline;
+          }
         </style>
       </head>
       <body>
-        <h1>Access Denied</h1>
-        <p>You do not have admin privileges.</p>
+        <h1><i class="fas fa-ban"></i> Access Denied</h1>
+        <p>You don't have administrator privileges.</p>
         
         <div class="user-info">
-          <p><strong>Your Discord ID:</strong> ${req.session.user.id}</p>
-          <p><strong>Your Username:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
-          <p><strong>Admin IDs Required:</strong> ${adminIds.join(', ')}</p>
+          <p><strong>Your Discord:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
+          <p><strong>Your ID:</strong> ${req.session.user.id}</p>
+          <p><strong>Required Admin IDs:</strong> ${adminIds.join(', ')}</p>
         </div>
         
-        <p><a href="/logout" style="color: #5865f2;">Logout</a></p>
+        <p>If you need admin access, contact <a href="https://discord.com/users/727888300210913310" class="contact-link" target="_blank">@nicksscold</a> on Discord.</p>
         
-        <div style="margin-top: 30px; font-size: 12px; color: #72767d;">
-          If you believe you should have admin access, check your Discord ID is in the ADMIN_IDS environment variable.
+        <div style="margin-top: 30px;">
+          <a href="/logout" style="color: #5865f2;">Logout</a> | 
+          <a href="https://hunterahead71-hash.github.io/void.training/" style="color: #5865f2;">Return to Training</a>
         </div>
       </body>
       </html>
