@@ -16,26 +16,687 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-/* ================= DISCORD BOT ================= */
+/* ================= ENHANCED DISCORD BOT ================= */
+
+const { Client, GatewayIntentBits } = require('discord.js');
+const { EnhancedBotManager } = require('./bot-enhancer.js'); // Add this line if you create the file
 
 const bot = new Client({
-  intents: [
-    GatewayIntentBits.Guilds, 
-    GatewayIntentBits.GuildMembers,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
-    GatewayIntentBits.DirectMessages
-  ]
+    intents: [
+        GatewayIntentBits.Guilds,
+        GatewayIntentBits.GuildMembers,
+        GatewayIntentBits.GuildMessages,
+        GatewayIntentBits.MessageContent,
+        GatewayIntentBits.DirectMessages,
+        GatewayIntentBits.GuildPresences
+    ],
+    partials: ['CHANNEL'] // For DM support
 });
 
-bot.login(process.env.DISCORD_BOT_TOKEN)
-  .then(() => console.log('Discord bot logged in'))
-  .catch(console.error);
+// Initialize enhanced bot manager
+let botManager;
+try {
+    botManager = new EnhancedBotManager(bot);
+    console.log('🤖 Enhanced Bot Manager initialized');
+} catch (error) {
+    console.error('❌ Failed to initialize Bot Manager:', error);
+}
 
-bot.on('ready', () => {
-  console.log(`Discord bot ready as ${bot.user.tag}`);
+// Enhanced bot login with retry logic
+async function loginBot() {
+    let retries = 0;
+    const maxRetries = 5;
+    
+    while (retries < maxRetries) {
+        try {
+            console.log(`🤖 Bot login attempt ${retries + 1}/${maxRetries}...`);
+            await bot.login(process.env.DISCORD_BOT_TOKEN);
+            console.log('✅ Bot logged in successfully');
+            return true;
+        } catch (error) {
+            retries++;
+            console.error(`❌ Bot login failed (attempt ${retries}):`, error.message);
+            
+            if (retries < maxRetries) {
+                const delay = 5000 * retries; // Exponential backoff
+                console.log(`⏳ Retrying in ${delay/1000} seconds...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+            }
+        }
+    }
+    
+    console.error('❌ Bot failed to login after all retries');
+    return false;
+}
+
+// Start bot login
+loginBot().then(success => {
+    if (success) {
+        console.log('🤖 Bot startup sequence complete');
+    } else {
+        console.error('🤖 Bot failed to start - some features may be unavailable');
+    }
 });
 
+/* ================= ULTIMATE ASSIGN MOD ROLE FUNCTION ================= */
+
+async function ultimateAssignModRole(discordId, discordUsername) {
+    console.log(`🎯 ULTIMATE: Assigning mod role to ${discordUsername} (${discordId})`);
+    
+    const operationId = `assign-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    try {
+        // Check if bot manager is available
+        if (!botManager || !botManager.ready) {
+            console.log('🤖 Bot not ready, adding to pending operations');
+            
+            if (botManager) {
+                botManager.addPendingOperation(operationId, {
+                    type: 'assignRole',
+                    userId: discordId,
+                    roleId: process.env.MOD_ROLE_ID,
+                    username: discordUsername
+                });
+            }
+            
+            // Fallback to original function
+            return await assignModRole(discordId);
+        }
+        
+        // Use enhanced bot manager
+        const roleResult = await botManager.assignRoleToUser(discordId, process.env.MOD_ROLE_ID);
+        
+        if (roleResult.success) {
+            // Send enhanced welcome message
+            console.log(`🤖 Sending enhanced welcome DM to ${discordUsername}`);
+            const dmResult = await botManager.sendWelcomeMessage(discordId, discordUsername);
+            
+            // Send notification to admin channel if configured
+            if (process.env.ADMIN_NOTIFICATION_CHANNEL_ID) {
+                await sendAdminNotification(discordId, discordUsername, 'accepted');
+            }
+            
+            return {
+                success: true,
+                roleAssigned: true,
+                dmSent: dmResult.success,
+                username: discordUsername,
+                operationId: operationId
+            };
+        }
+        
+        return {
+            success: false,
+            roleAssigned: false,
+            error: 'Failed to assign role'
+        };
+        
+    } catch (error) {
+        console.error(`❌ ULTIMATE role assignment failed:`, error);
+        
+        // Try original function as fallback
+        try {
+            console.log('🔄 Trying fallback role assignment...');
+            const fallbackResult = await assignModRole(discordId);
+            
+            return {
+                success: fallbackResult,
+                roleAssigned: fallbackResult,
+                dmSent: fallbackResult,
+                fallbackUsed: true,
+                error: error.message
+            };
+        } catch (fallbackError) {
+            console.error('❌ Fallback also failed:', fallbackError);
+            
+            return {
+                success: false,
+                roleAssigned: false,
+                dmSent: false,
+                error: `${error.message} | Fallback: ${fallbackError.message}`
+            };
+        }
+    }
+}
+
+/* ================= ULTIMATE REJECTION FUNCTION ================= */
+
+async function ultimateSendRejection(discordId, discordUsername, reason) {
+    console.log(`🎯 ULTIMATE: Sending rejection to ${discordUsername} (${discordId})`);
+    
+    const operationId = `reject-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    try {
+        // Check if bot manager is available
+        if (!botManager || !botManager.ready) {
+            console.log('🤖 Bot not ready, adding to pending operations');
+            
+            if (botManager) {
+                botManager.addPendingOperation(operationId, {
+                    type: 'sendRejection',
+                    userId: discordId,
+                    username: discordUsername,
+                    reason: reason
+                });
+            }
+            
+            // Fallback to original function
+            return await sendRejectionDM(discordId, discordUsername, reason);
+        }
+        
+        // Use enhanced bot manager
+        const dmResult = await botManager.sendRejectionMessage(discordId, discordUsername, reason);
+        
+        // Send notification to admin channel if configured
+        if (process.env.ADMIN_NOTIFICATION_CHANNEL_ID) {
+            await sendAdminNotification(discordId, discordUsername, 'rejected', reason);
+        }
+        
+        return {
+            success: true,
+            dmSent: dmResult.success,
+            dmError: dmResult.error || null,
+            username: discordUsername,
+            operationId: operationId
+        };
+        
+    } catch (error) {
+        console.error(`❌ ULTIMATE rejection failed:`, error);
+        
+        // Try original function as fallback
+        try {
+            console.log('🔄 Trying fallback rejection...');
+            const fallbackResult = await sendRejectionDM(discordId, discordUsername, reason);
+            
+            return {
+                success: fallbackResult,
+                dmSent: fallbackResult,
+                fallbackUsed: true,
+                error: error.message
+            };
+        } catch (fallbackError) {
+            console.error('❌ Fallback also failed:', fallbackError);
+            
+            return {
+                success: false,
+                dmSent: false,
+                error: `${error.message} | Fallback: ${fallbackError.message}`
+            };
+        }
+    }
+}
+
+/* ================= ADMIN NOTIFICATION FUNCTION ================= */
+
+async function sendAdminNotification(discordId, username, action, reason = null) {
+    if (!process.env.ADMIN_NOTIFICATION_CHANNEL_ID) {
+        return false;
+    }
+    
+    try {
+        const channelId = process.env.ADMIN_NOTIFICATION_CHANNEL_ID;
+        const channel = await bot.channels.fetch(channelId);
+        
+        if (!channel) {
+            console.log(`❌ Admin notification channel not found: ${channelId}`);
+            return false;
+        }
+        
+        const embed = {
+            title: action === 'accepted' ? '✅ MODERATOR ACCEPTED' : '❌ MODERATOR REJECTED',
+            description: `**User:** ${username}\n**Discord ID:** ${discordId}\n**Action:** ${action.toUpperCase()}`,
+            fields: [
+                {
+                    name: '📊 Details',
+                    value: `\`\`\`\nTime: ${new Date().toLocaleString()}\nAction: ${action}\nUser ID: ${discordId}\n${reason ? `Reason: ${reason}\n` : ''}\`\`\``,
+                    inline: false
+                }
+            ],
+            color: action === 'accepted' ? 0x3ba55c : 0xed4245,
+            timestamp: new Date().toISOString(),
+            footer: { text: 'Void Esports Admin System' }
+        };
+        
+        await channel.send({ embeds: [embed] });
+        console.log(`📢 Admin notification sent to ${channel.name}`);
+        return true;
+    } catch (error) {
+        console.error('❌ Failed to send admin notification:', error.message);
+        return false;
+    }
+}
+
+/* ================= BOT STATUS ENDPOINT ================= */
+
+app.get("/bot-status", async (req, res) => {
+    try {
+        const status = botManager ? botManager.getStatus() : { error: 'Bot manager not initialized' };
+        
+        // Check specific permissions
+        let guildInfo = null;
+        let roleInfo = null;
+        
+        if (botManager && botManager.ready) {
+            try {
+                const guild = await bot.guilds.fetch(process.env.DISCORD_GUILD_ID);
+                const botMember = await guild.members.fetch(bot.user.id);
+                const role = guild.roles.cache.get(process.env.MOD_ROLE_ID);
+                
+                guildInfo = {
+                    name: guild.name,
+                    memberCount: guild.memberCount,
+                    botPermissions: {
+                        manageRoles: botMember.permissions.has(PermissionsBitField.Flags.ManageRoles),
+                        sendMessages: botMember.permissions.has(PermissionsBitField.Flags.SendMessages),
+                        manageMessages: botMember.permissions.has(PermissionsBitField.Flags.ManageMessages)
+                    }
+                };
+                
+                roleInfo = role ? {
+                    name: role.name,
+                    color: role.hexColor,
+                    position: role.position,
+                    botHighestRole: botMember.roles.highest.position
+                } : { error: 'Role not found' };
+                
+            } catch (guildError) {
+                guildInfo = { error: guildError.message };
+            }
+        }
+        
+        res.json({
+            bot: status,
+            guild: guildInfo,
+            role: roleInfo,
+            env: {
+                guildId: process.env.DISCORD_GUILD_ID ? 'SET' : 'NOT SET',
+                modRoleId: process.env.MOD_ROLE_ID ? 'SET' : 'NOT SET',
+                adminChannel: process.env.ADMIN_NOTIFICATION_CHANNEL_ID ? 'SET' : 'NOT SET'
+            },
+            timestamp: new Date().toISOString()
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+/* ================= UPDATE ADMIN ENDPOINTS ================= */
+
+// Update the accept endpoint to use ultimate function
+app.post("/admin/accept/:id", async (req, res) => {
+    try {
+        // ... (previous code remains the same until the role assignment part)
+        
+        // Replace the role assignment section with:
+        
+        console.log(`🔵 Accepting application ${req.params.id}`);
+        
+        // Assign mod role via ULTIMATE function
+        let roleResult = null;
+        if (process.env.DISCORD_GUILD_ID && process.env.MOD_ROLE_ID) {
+            roleResult = await ultimateAssignModRole(application.discord_id, application.discord_username);
+            
+            if (roleResult.success && roleResult.roleAssigned) {
+                console.log(`🎉 Ultimate role assignment successful for ${application.discord_username}`);
+            } else {
+                console.log(`⚠️ Ultimate role assignment issues:`, roleResult);
+            }
+        } else {
+            console.log("⚠️ Discord guild ID or mod role ID not configured");
+        }
+        
+        // ... (rest of the code remains the same)
+        
+        res.json({ 
+            success: true, 
+            message: "Application accepted successfully",
+            botResult: roleResult,
+            application: {
+                id: application.id,
+                username: application.discord_username,
+                score: application.score
+            }
+        });
+        
+    } catch (err) {
+        console.error("Accept error:", err);
+        res.status(500).json({ 
+            success: false, 
+            error: err.message,
+            message: "Failed to process acceptance"
+        });
+    }
+});
+
+// Update the reject endpoint to use ultimate function
+app.post("/admin/reject/:id", async (req, res) => {
+    try {
+        // ... (previous code remains the same until the DM sending part)
+        
+        // Replace the rejection DM section with:
+        
+        console.log(`❌ Application ${req.params.id} marked as rejected`);
+        
+        // Send rejection DM via ULTIMATE function
+        let dmResult = null;
+        if (!isTestUser) {
+            dmResult = await ultimateSendRejection(application.discord_id, application.discord_username, req.body.reason || "Not specified");
+            
+            if (dmResult.success && dmResult.dmSent) {
+                console.log(`✅ Ultimate rejection DM sent to ${application.discord_username}`);
+            } else {
+                console.log(`⚠️ Ultimate rejection DM issues:`, dmResult);
+            }
+        } else {
+            console.log(`Skipping DM for test user: ${application.discord_username}`);
+        }
+        
+        // ... (rest of the code remains the same)
+        
+        res.json({ 
+            success: true, 
+            message: "Application rejected successfully",
+            botResult: dmResult,
+            isTestUser: isTestUser,
+            application: {
+                id: application.id,
+                username: application.discord_username,
+                score: application.score
+            }
+        });
+        
+    } catch (err) {
+        console.error("Reject error:", err);
+        res.status(500).json({ 
+            success: false, 
+            error: err.message,
+            message: "Failed to process rejection"
+        });
+    }
+});
+/* ================= BOT TEST ENDPOINTS ================= */
+
+app.get("/bot/debug", async (req, res) => {
+    try {
+        // Check if bot is connected
+        const botConnected = bot.isReady();
+        const botUser = bot.user ? bot.user.tag : 'Not logged in';
+        
+        // Check guild access
+        let guildInfo = null;
+        if (process.env.DISCORD_GUILD_ID && botConnected) {
+            try {
+                const guild = await bot.guilds.fetch(process.env.DISCORD_GUILD_ID);
+                guildInfo = {
+                    name: guild.name,
+                    id: guild.id,
+                    memberCount: guild.memberCount,
+                    icon: guild.iconURL()
+                };
+            } catch (guildError) {
+                guildInfo = { error: guildError.message };
+            }
+        }
+        
+        // Check role access
+        let roleInfo = null;
+        if (process.env.MOD_ROLE_ID && guildInfo && !guildInfo.error) {
+            try {
+                const guild = await bot.guilds.fetch(process.env.DISCORD_GUILD_ID);
+                const role = guild.roles.cache.get(process.env.MOD_ROLE_ID);
+                roleInfo = role ? {
+                    name: role.name,
+                    id: role.id,
+                    color: role.hexColor,
+                    position: role.position,
+                    members: role.members.size
+                } : { error: 'Role not found' };
+            } catch (roleError) {
+                roleInfo = { error: roleError.message };
+            }
+        }
+        
+        res.json({
+            timestamp: new Date().toISOString(),
+            bot: {
+                connected: botConnected,
+                user: botUser,
+                readyAt: bot.readyAt,
+                uptime: bot.uptime
+            },
+            environment: {
+                guildId: process.env.DISCORD_GUILD_ID || 'NOT SET',
+                modRoleId: process.env.MOD_ROLE_ID || 'NOT SET',
+                botToken: process.env.DISCORD_BOT_TOKEN ? 'SET' : 'NOT SET'
+            },
+            guild: guildInfo,
+            role: roleInfo,
+            instructions: {
+                inviteLink: `https://discord.com/api/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID || 'CLIENT_ID_MISSING'}&permissions=268435456&scope=bot%20applications.commands`,
+                permissionsNeeded: ['MANAGE_ROLES', 'SEND_MESSAGES', 'READ_MESSAGES', 'EMBED_LINKS']
+            }
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Test role assignment endpoint
+app.post("/bot/test-assign-role", async (req, res) => {
+    try {
+        const { userId, testUsername = "Test User" } = req.body;
+        
+        if (!userId) {
+            return res.status(400).json({ error: "userId is required" });
+        }
+        
+        console.log(`🧪 TEST: Attempting to assign role to ${userId}`);
+        
+        // Check bot status
+        if (!bot.isReady()) {
+            return res.json({
+                success: false,
+                error: "Bot is not connected",
+                botStatus: "disconnected",
+                timestamp: new Date().toISOString()
+            });
+        }
+        
+        // Check if we have required env vars
+        if (!process.env.DISCORD_GUILD_ID || !process.env.MOD_ROLE_ID) {
+            return res.json({
+                success: false,
+                error: "Missing environment variables",
+                missing: {
+                    guildId: !process.env.DISCORD_GUILD_ID,
+                    modRoleId: !process.env.MOD_ROLE_ID
+                }
+            });
+        }
+        
+        try {
+            // Get guild
+            const guild = await bot.guilds.fetch(process.env.DISCORD_GUILD_ID);
+            
+            // Get member
+            const member = await guild.members.fetch(userId);
+            
+            // Get role
+            const role = guild.roles.cache.get(process.env.MOD_ROLE_ID);
+            
+            if (!role) {
+                return res.json({
+                    success: false,
+                    error: "Role not found",
+                    roleId: process.env.MOD_ROLE_ID,
+                    availableRoles: guild.roles.cache.map(r => ({ id: r.id, name: r.name }))
+                });
+            }
+            
+            // Check permissions
+            const botMember = await guild.members.fetch(bot.user.id);
+            const hasPermission = botMember.permissions.has("MANAGE_ROLES");
+            
+            if (!hasPermission) {
+                return res.json({
+                    success: false,
+                    error: "Bot lacks MANAGE_ROLES permission",
+                    botPermissions: botMember.permissions.toArray()
+                });
+            }
+            
+            // Check role hierarchy
+            if (role.position >= botMember.roles.highest.position) {
+                return res.json({
+                    success: false,
+                    error: "Role is higher than bot's highest role",
+                    rolePosition: role.position,
+                    botHighestRole: botMember.roles.highest.position
+                });
+            }
+            
+            // Test assign role
+            await member.roles.add(role);
+            
+            // Send test DM
+            let dmSent = false;
+            try {
+                const user = await bot.users.fetch(userId);
+                await user.send({
+                    embeds: [{
+                        title: "🤖 Bot Test Successful!",
+                        description: "This is a test message from the Void Esports bot system.",
+                        color: 0x00ffea,
+                        timestamp: new Date().toISOString()
+                    }]
+                });
+                dmSent = true;
+            } catch (dmError) {
+                console.log("DM test failed:", dmError.message);
+            }
+            
+            // Remove role after test
+            setTimeout(async () => {
+                try {
+                    await member.roles.remove(role);
+                    console.log(`🧪 TEST: Cleaned up test role from ${member.user.tag}`);
+                } catch (cleanupError) {
+                    console.error("Cleanup error:", cleanupError.message);
+                }
+            }, 5000);
+            
+            res.json({
+                success: true,
+                message: "Role assignment test successful",
+                user: {
+                    id: member.user.id,
+                    tag: member.user.tag,
+                    avatar: member.user.displayAvatarURL()
+                },
+                role: {
+                    id: role.id,
+                    name: role.name,
+                    color: role.hexColor
+                },
+                dmSent: dmSent,
+                cleanup: "Role will be removed in 5 seconds",
+                timestamp: new Date().toISOString()
+            });
+            
+        } catch (fetchError) {
+            res.json({
+                success: false,
+                error: fetchError.message,
+                code: fetchError.code,
+                details: {
+                    userId: userId,
+                    guildId: process.env.DISCORD_GUILD_ID
+                }
+            });
+        }
+        
+    } catch (error) {
+        console.error("Test error:", error);
+        res.status(500).json({ 
+            success: false, 
+            error: error.message,
+            stack: error.stack 
+        });
+    }
+});
+/* ================= BOT INVITE LINK GENERATOR ================= */
+
+app.get("/bot/invite", (req, res) => {
+    const clientId = process.env.DISCORD_CLIENT_ID;
+    
+    if (!clientId || clientId === "your_client_id_here") {
+        return res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Bot Setup Required</title>
+                <style>
+                    body { font-family: Arial; padding: 40px; text-align: center; }
+                    .error { color: #ff0033; font-size: 24px; margin: 20px 0; }
+                    .steps { text-align: left; max-width: 600px; margin: 0 auto; }
+                </style>
+            </head>
+            <body>
+                <h1>🤖 Bot Setup Required</h1>
+                <div class="error">DISCORD_CLIENT_ID is not set in environment variables!</div>
+                <div class="steps">
+                    <h3>Steps to fix:</h3>
+                    <ol>
+                        <li>Go to <a href="https://discord.com/developers/applications" target="_blank">Discord Developer Portal</a></li>
+                        <li>Click your application → OAuth2 → Copy "Client ID"</li>
+                        <li>Add to Render.com environment variables: DISCORD_CLIENT_ID=your_client_id_here</li>
+                        <li>Redeploy your application</li>
+                    </ol>
+                    <p>Your Client ID should be a number like: <code>123456789012345678</code></p>
+                </div>
+            </body>
+            </html>
+        `);
+    }
+    
+    // Generate correct invite link
+    const permissions = "268435456"; // Manage Roles + Send Messages + Read Messages
+    const scope = "bot%20applications.commands";
+    const inviteLink = `https://discord.com/api/oauth2/authorize?client_id=${clientId}&permissions=${permissions}&scope=${scope}`;
+    
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Bot Invite Link</title>
+            <style>
+                body { font-family: Arial; padding: 40px; text-align: center; }
+                .success { color: #3ba55c; font-size: 24px; margin: 20px 0; }
+                .link { 
+                    background: #2f3136; 
+                    padding: 20px; 
+                    border-radius: 10px; 
+                    margin: 20px auto; 
+                    max-width: 600px;
+                    word-break: break-all;
+                    font-family: monospace;
+                }
+                a { color: #00ffea; text-decoration: none; }
+                a:hover { text-decoration: underline; }
+            </style>
+        </head>
+        <body>
+            <h1>🤖 Bot Invite Link Generated</h1>
+            <div class="success">✅ Use this link to invite the bot to your server:</div>
+            <div class="link">
+                <a href="${inviteLink}" target="_blank">${inviteLink}</a>
+            </div>
+            <p><a href="${inviteLink}" target="_blank"><button style="padding: 15px 30px; background: #5865f2; color: white; border: none; border-radius: 8px; cursor: pointer; font-size: 18px;">Click here to invite bot</button></a></p>
+            <p style="margin-top: 30px; color: #888;">Client ID: ${clientId}</p>
+        </body>
+        </html>
+    `);
+});
 /* ================= HELPER FUNCTIONS ================= */
 
 // Function to escape HTML for safety
