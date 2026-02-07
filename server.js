@@ -195,6 +195,13 @@ app.get("/me", (req, res) => {
   });
 });
 
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} ${req.method} ${req.path}`);
+  console.log('Headers:', req.headers);
+  console.log('Session ID:', req.sessionID);
+  console.log('Session:', req.session);
+  next();
+});
 /* ================= ADMIN ================= */
 
 app.get("/admin", async (req, res) => {
