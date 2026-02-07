@@ -1904,7 +1904,19 @@ app.post("/admin/accept/:id", async (req, res) => {
     });
   }
 });
-
+app.post("/admin/reject/:id", async (req, res) => {
+  console.log(`\n🔴 REJECT ENDPOINT CALLED`);
+  console.log(`   Requested ID: ${req.params.id}`);
+  console.log(`   Type: ${typeof req.params.id}`);
+  
+  // Test database connection
+  const { count, error: countError } = await supabase
+    .from("applications")
+    .select('*', { count: 'exact', head: true });
+  
+  console.log(`   Total apps in DB: ${count}`);
+  
+  // Continue with your existing code...
 app.post("/admin/reject/:id", async (req, res) => {
   try {
     console.log(`\n🔴 ========== REJECTING APPLICATION ${req.params.id} ==========`);
