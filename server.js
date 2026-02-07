@@ -8,15 +8,7 @@ const { Client, GatewayIntentBits, EmbedBuilder, ChannelType, PermissionsBitFiel
 const MemoryStore = require('memorystore')(session);
 
 const app = express();
-const bot = new Client({
-    intents: [
-        GatewayIntentBits.Guilds, 
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages
-    ]
-});
+
 
 /* ================= SUPABASE ================= */
 
