@@ -30,7 +30,7 @@ const bot = new Client({
     GatewayIntentBits.MessageContent, // Requires MESSAGE CONTENT INTENT
     GatewayIntentBits.DirectMessages
   ]
-    partials: ['CHANNEL'] // For DM support
+  
 });
 
 // Initialize enhanced bot manager
