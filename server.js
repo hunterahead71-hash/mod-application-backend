@@ -378,7 +378,6 @@ app.get("/auth/discord/callback", async (req, res) => {
                 <div class="user-info">
                   <p><strong>Your Discord:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
                   <p><strong>Your ID:</strong> ${req.session.user.id}</p>
-                  <p><strong>Required Admin IDs:</strong> ${adminIds.join(', ')}</p>
                 </div>
                 
                 <p>If you need admin access, contact <a href="https://discord.com/users/727888300210913310" class="contact-link" target="_blank">@nicksscold</a> on Discord.</p>
@@ -616,7 +615,6 @@ app.get("/admin", async (req, res) => {
         <div class="user-info">
           <p><strong>Your Discord:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
           <p><strong>Your ID:</strong> ${req.session.user.id}</p>
-          <p><strong>Required Admin IDs:</strong> ${adminIds.join(', ')}</p>
           <p><strong>Your session ID:</strong> ${req.sessionID}</p>
         </div>
         
@@ -684,10 +682,11 @@ app.get("/admin", async (req, res) => {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           body {
-            font-family: Arial, sans-serif;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
             background: var(--discord-bg);
             color: #ffffff;
             min-height: 100vh;
@@ -713,6 +712,7 @@ app.get("/admin", async (req, res) => {
           .header h1 {
             color: var(--void-blood);
             font-size: 28px;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .user-info {
@@ -731,6 +731,7 @@ app.get("/admin", async (req, res) => {
             justify-content: center;
             font-weight: bold;
             font-size: 20px;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .logout-btn {
@@ -741,6 +742,7 @@ app.get("/admin", async (req, res) => {
             text-decoration: none;
             font-weight: bold;
             transition: all 0.3s;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .logout-btn:hover {
@@ -766,6 +768,7 @@ app.get("/admin", async (req, res) => {
             font-size: 36px;
             font-weight: bold;
             margin-bottom: 10px;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .stat-label {
@@ -773,6 +776,7 @@ app.get("/admin", async (req, res) => {
             font-size: 14px;
             text-transform: uppercase;
             letter-spacing: 1px;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .total { color: var(--void-neon); }
@@ -796,6 +800,7 @@ app.get("/admin", async (req, res) => {
             cursor: pointer;
             font-weight: bold;
             transition: all 0.3s;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .filter-btn.active {
@@ -846,16 +851,19 @@ app.get("/admin", async (req, res) => {
             align-items: center;
             justify-content: center;
             font-weight: bold;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .app-info h3 {
             font-size: 18px;
             margin-bottom: 5px;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .app-info p {
             color: #888;
             font-size: 14px;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .app-status {
@@ -865,6 +873,7 @@ app.get("/admin", async (req, res) => {
             font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 1px;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .status-pending { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
@@ -889,6 +898,7 @@ app.get("/admin", async (req, res) => {
             font-size: 24px;
             font-weight: bold;
             color: var(--void-neon);
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .app-actions {
@@ -907,6 +917,7 @@ app.get("/admin", async (req, res) => {
             align-items: center;
             gap: 6px;
             transition: all 0.3s;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .accept-btn {
@@ -934,6 +945,7 @@ app.get("/admin", async (req, res) => {
             padding: 50px;
             color: #888;
             font-size: 18px;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
           
           .answers-content {
@@ -941,7 +953,7 @@ app.get("/admin", async (req, res) => {
             padding: 10px;
             background: rgba(0,0,0,0.5);
             border-radius: 8px;
-            font-family: monospace;
+            font-family: 'JetBrains Mono', monospace;
             font-size: 12px;
             max-height: 200px;
             overflow-y: auto;
@@ -962,6 +974,7 @@ app.get("/admin", async (req, res) => {
             display: flex;
             align-items: center;
             gap: 5px;
+            font-family: 'Whitney', 'Helvetica Neue', Helvetica, Arial, sans-serif;
           }
         </style>
       </head>
