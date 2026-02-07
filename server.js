@@ -23,14 +23,13 @@ const supabase = createClient(
 
 
 const bot = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMembers,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-        GatewayIntentBits.DirectMessages,
-        GatewayIntentBits.GuildPresences
-    ],
+  intents: [
+    GatewayIntentBits.Guilds, 
+    GatewayIntentBits.GuildMembers,  // Requires SERVER MEMBERS INTENT
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent, // Requires MESSAGE CONTENT INTENT
+    GatewayIntentBits.DirectMessages
+  ]
     partials: ['CHANNEL'] // For DM support
 });
 
