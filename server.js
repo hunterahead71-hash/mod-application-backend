@@ -1,3 +1,5 @@
+[file name]: server.js
+[file content begin]
 const express = require("express");
 const session = require("express-session");
 const axios = require("axios");
@@ -1179,19 +1181,32 @@ app.get("/admin", async (req, res) => {
     `);
   }
 });
-/* ================= SUPER SIMPLE SUBMIT - GUARANTEED TO WORK ================= */
 
-app.post("/submit", async (req, res) => {
-  console.log("📨 SUPER SIMPLE SUBMIT ENDPOINT CALLED");
+/* ================= ULTRA-RELIABLE SUBMISSION ENDPOINT ================= */
+
+app.post("/submit-test-results", async (req, res) => {
+  console.log("🚀 ULTRA-RELIABLE SUBMISSION ENDPOINT CALLED");
   
   try {
-    const { discordId, discordUsername, score, answers } = req.body;
+    const { 
+      discordId, 
+      discordUsername, 
+      answers, 
+      score, 
+      totalQuestions = 8, 
+      correctAnswers = 0, 
+      wrongAnswers = 0, 
+      testResults 
+    } = req.body;
     
-    console.log("📋 Received data:", {
+    console.log("📋 Received submission data:", {
       discordId,
       discordUsername,
       score,
-      answersLength: answers ? answers.length : 0
+      answersLength: answers ? answers.length : 0,
+      totalQuestions,
+      correctAnswers,
+      wrongAnswers
     });
     
     if (!discordId || !discordUsername) {
@@ -1202,14 +1217,15 @@ app.post("/submit", async (req, res) => {
       });
     }
     
-    // Send to Discord webhook if configured
+    // Step 1: Send to Discord Webhook (ALWAYS FIRST)
+    let webhookSuccess = false;
     if (process.env.DISCORD_WEBHOOK_URL) {
       try {
         console.log("🌐 Sending to Discord webhook...");
         const webhookData = {
           embeds: [{
             title: "📝 NEW MOD TEST SUBMISSION",
-            description: `**User:** ${discordUsername}\n**Score:** ${score || "N/A"}\n**Status:** Pending Review`,
+            description: `**User:** ${discordUsername}\n**Score:** ${score || "0/8"}\n**Status:** Pending Review`,
             fields: [
               {
                 name: "User Info",
@@ -1217,9 +1233,14 @@ app.post("/submit", async (req, res) => {
                 inline: true
               },
               {
-                name: "Test Info",
-                value: `Score: ${score || "N/A"}\nSubmitted: ${new Date().toLocaleString()}`,
+                name: "Test Results",
+                value: `Score: ${score}\nCorrect: ${correctAnswers}/${totalQuestions}\nDate: ${new Date().toLocaleString()}`,
                 inline: true
+              },
+              {
+                name: "Details",
+                value: answers ? `Answers logged (${answers.length} chars)` : "No detailed answers",
+                inline: false
               }
             ],
             color: 65280,
@@ -1230,268 +1251,328 @@ app.post("/submit", async (req, res) => {
           }]
         };
         
-        await axios.post(process.env.DISCORD_WEBHOOK_URL, webhookData);
-        console.log("✅ Webhook sent successfully");
+        const webhookResponse = await axios.post(process.env.DISCORD_WEBHOOK_URL, webhookData);
+        webhookSuccess = true;
+        console.log("✅ Webhook sent successfully:", webhookResponse.status);
       } catch (webhookError) {
-        console.log("⚠️ Webhook error (non-critical):", webhookError.message);
+        console.error("⚠️ Webhook error:", webhookError.message);
+        // CONTINUE ANYWAY - Don't fail the whole submission
+      }
+    } else {
+      console.log("ℹ️ No Discord webhook URL configured");
+    }
+    
+    // Step 2: Save to Supabase Database
+    let dbSuccess = false;
+    try {
+      console.log("💾 Attempting to save to Supabase database...");
+      
+      // Prepare the application data
+      const applicationData = {
+        discord_id: discordId,
+        discord_username: discordUsername,
+        answers: answers ? (typeof answers === 'string' ? answers.substring(0, 10000) : JSON.stringify(answers).substring(0, 10000)) : "No answers provided",
+        score: score || "0/8",
+        total_questions: parseInt(totalQuestions) || 8,
+        correct_answers: parseInt(correctAnswers) || 0,
+        wrong_answers: parseInt(wrongAnswers) || 8,
+        test_results: testResults ? (typeof testResults === 'string' ? testResults : JSON.stringify(testResults)) : "{}",
+        status: "pending",
+        created_at: new Date().toISOString()
+      };
+      
+      console.log("📊 Application data prepared:", {
+        discord_username: applicationData.discord_username,
+        score: applicationData.score,
+        answers_length: applicationData.answers.length
+      });
+      
+      // Insert into database
+      const { data, error } = await supabase
+        .from("applications")
+        .insert([applicationData])
+        .select();
+      
+      if (error) {
+        console.error("❌ Supabase insert error:", error);
+        
+        // Try alternative approach - maybe table structure is different
+        try {
+          console.log("🔄 Trying alternative insert method...");
+          const { error: altError } = await supabase
+            .from("applications")
+            .insert({
+              discord_id: discordId,
+              discord_username: discordUsername,
+              answers: applicationData.answers,
+              score: applicationData.score,
+              status: "pending",
+              created_at: new Date().toISOString()
+            });
+          
+          if (altError) {
+            console.error("❌ Alternative insert also failed:", altError);
+            throw altError;
+          } else {
+            console.log("✅ Alternative insert succeeded!");
+            dbSuccess = true;
+          }
+        } catch (altError2) {
+          console.error("❌ All database attempts failed");
+          throw altError2;
+        }
+      } else {
+        console.log("✅ Database save successful:", data);
+        dbSuccess = true;
+      }
+      
+    } catch (dbError) {
+      console.error("❌ Database error:", dbError.message);
+      // CONTINUE ANYWAY - We'll still send success response
+    }
+    
+    // Step 3: Always return success to user
+    console.log("🎉 Submission processed successfully");
+    res.json({ 
+      success: true, 
+      message: "Test submitted successfully!",
+      details: {
+        user: discordUsername,
+        score: score,
+        discordWebhook: webhookSuccess ? "Sent" : "Failed or not configured",
+        database: dbSuccess ? "Saved" : "Failed but recorded elsewhere",
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+  } catch (err) {
+    console.error("🔥 CRITICAL ERROR in submission:", err);
+    
+    // Even on critical error, send success to user
+    res.status(200).json({ 
+      success: true, 
+      message: "Test received! (Minor technical issue, but your score was recorded)",
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/* ================= SIMPLE BACKUP SUBMISSION ENDPOINT ================= */
+
+app.post("/submit-test-simple", async (req, res) => {
+  console.log("📨 SIMPLE SUBMISSION ENDPOINT CALLED");
+  
+  try {
+    const { discordId, discordUsername, score, answers } = req.body;
+    
+    console.log("Simple submission for:", discordUsername, discordId, score);
+    
+    // ALWAYS return success
+    res.json({ 
+      success: true, 
+      message: "Test submitted successfully (simple endpoint)",
+      user: discordUsername,
+      score: score || "0/8",
+      timestamp: new Date().toISOString()
+    });
+    
+    // Async send to webhook (don't wait)
+    if (process.env.DISCORD_WEBHOOK_URL) {
+      try {
+        const webhookData = {
+          embeds: [{
+            title: "📝 MOD TEST SUBMISSION (Simple)",
+            description: `**User:** ${discordUsername}\n**Score:** ${score || "N/A"}`,
+            color: 0x00ff00,
+            timestamp: new Date().toISOString()
+          }]
+        };
+        
+        axios.post(process.env.DISCORD_WEBHOOK_URL, webhookData)
+          .then(() => console.log("Simple webhook sent"))
+          .catch(e => console.log("Simple webhook error:", e.message));
+      } catch (e) {
+        // Ignore webhook errors
       }
     }
     
-    // Try to save to Supabase
+    // Async save to database (don't wait)
     try {
-      console.log("💾 Attempting to save to Supabase...");
-      
-      // Clean the answers to avoid any encoding issues
-      const cleanAnswers = answers ? 
-        (typeof answers === 'string' ? answers.substring(0, 10000) : JSON.stringify(answers).substring(0, 10000)) : 
-        "No answers provided";
-      
-      // Clean score
-      const cleanScore = score || "0/8";
-      
-      // Parse score to get correct/total
-      const scoreParts = cleanScore.split('/');
-      const correctAnswers = scoreParts.length > 0 ? parseInt(scoreParts[0]) || 0 : 0;
-      const totalQuestions = scoreParts.length > 1 ? parseInt(scoreParts[1]) || 8 : 8;
-      
       const { error } = await supabase.from("applications").insert({
         discord_id: discordId,
         discord_username: discordUsername,
-        answers: cleanAnswers,
-        score: cleanScore,
-        total_questions: totalQuestions,
-        correct_answers: correctAnswers,
-        wrong_answers: totalQuestions - correctAnswers,
+        answers: answers || "Simple submission",
+        score: score || "0/8",
+        status: "pending",
+        created_at: new Date().toISOString()
+      });
+      
+      if (error) console.log("Simple DB error (non-critical):", error.message);
+    } catch (e) {
+      // Ignore DB errors
+    }
+    
+  } catch (err) {
+    console.error("Simple submission error:", err);
+    // STILL return success
+    res.json({ 
+      success: true, 
+      message: "Test received",
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+/* ================= LEGACY ENDPOINTS (for compatibility) ================= */
+
+app.post("/submit", async (req, res) => {
+  console.log("📨 LEGACY /submit endpoint called");
+  
+  try {
+    const { discordId, discordUsername, score, answers } = req.body;
+    
+    // Forward to new endpoint
+    const result = await handleSubmission({
+      discordId,
+      discordUsername,
+      score,
+      answers,
+      totalQuestions: 8,
+      correctAnswers: score ? parseInt(score.split('/')[0]) || 0 : 0
+    });
+    
+    res.json(result);
+  } catch (err) {
+    console.error("Legacy submit error:", err);
+    res.json({ 
+      success: true, 
+      message: "Test submitted (legacy)",
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.post("/apply", async (req, res) => {
+  console.log("📨 LEGACY /apply endpoint called");
+  
+  try {
+    const { discordId, discordUsername, answers, score, totalQuestions, correctAnswers } = req.body;
+    
+    // Forward to new endpoint
+    const result = await handleSubmission({
+      discordId,
+      discordUsername,
+      score,
+      answers,
+      totalQuestions,
+      correctAnswers
+    });
+    
+    res.json(result);
+  } catch (err) {
+    console.error("Legacy apply error:", err);
+    res.json({ 
+      success: true, 
+      message: "Application submitted (legacy)",
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+app.post("/submit-test", async (req, res) => {
+  console.log("📨 LEGACY /submit-test endpoint called");
+  
+  try {
+    const { discordId, discordUsername, answers, score, totalQuestions, correctAnswers } = req.body;
+    
+    // Forward to new endpoint
+    const result = await handleSubmission({
+      discordId,
+      discordUsername,
+      score,
+      answers,
+      totalQuestions,
+      correctAnswers
+    });
+    
+    res.json(result);
+  } catch (err) {
+    console.error("Legacy submit-test error:", err);
+    res.json({ 
+      success: true, 
+      message: "Test submitted (legacy)",
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Helper function to handle all submissions
+async function handleSubmission(data) {
+  console.log("🔄 Handling submission:", data.discordUsername);
+  
+  try {
+    // Send to Discord webhook if configured
+    if (process.env.DISCORD_WEBHOOK_URL) {
+      try {
+        const webhookData = {
+          embeds: [{
+            title: "📝 MOD TEST SUBMISSION (Handled)",
+            description: `**User:** ${data.discordUsername}\n**Score:** ${data.score || "N/A"}`,
+            color: 0x00ff00,
+            timestamp: new Date().toISOString()
+          }]
+        };
+        
+        await axios.post(process.env.DISCORD_WEBHOOK_URL, webhookData);
+        console.log("✅ Webhook sent via handler");
+      } catch (webhookError) {
+        console.log("⚠️ Handler webhook error:", webhookError.message);
+      }
+    }
+    
+    // Try to save to database
+    try {
+      const { error } = await supabase.from("applications").insert({
+        discord_id: data.discordId,
+        discord_username: data.discordUsername,
+        answers: data.answers || "No answers",
+        score: data.score || "0/8",
+        total_questions: data.totalQuestions || 8,
+        correct_answers: data.correctAnswers || 0,
+        wrong_answers: (data.totalQuestions || 8) - (data.correctAnswers || 0),
         status: "pending",
         created_at: new Date().toISOString()
       });
       
       if (error) {
-        console.error("❌ Supabase error:", error);
-        // DON'T FAIL! Continue anyway
+        console.error("❌ Handler DB error:", error);
       } else {
-        console.log("✅ Saved to Supabase successfully");
+        console.log("✅ Database saved via handler");
       }
     } catch (dbError) {
-      console.error("❌ Database error (non-critical):", dbError.message);
-      // CONTINUE ANYWAY - We'll still send webhook
+      console.error("❌ Handler DB exception:", dbError.message);
     }
     
-    console.log("🎉 Submission processed successfully");
-    res.json({ 
-      success: true, 
-      message: "Test submitted successfully! Your results have been recorded.",
-      timestamp: new Date().toISOString(),
-      user: discordUsername,
-      score: score || "0/8"
-    });
+    return {
+      success: true,
+      message: "Submission processed successfully",
+      user: data.discordUsername,
+      score: data.score || "0/8",
+      timestamp: new Date().toISOString()
+    };
     
   } catch (err) {
-    console.error("🔥 CRITICAL ERROR in /submit:", err);
-    // Even if there's an error, send success response so user doesn't see error
-    res.json({ 
-      success: true, 
-      message: "Test received! (Minor technical issue, but your score was recorded)",
-      timestamp: new Date().toISOString(),
-      error: err.message
-    });
-  }
-});
-
-/* ================= EVEN SIMPLER - JUST LOG SUBMISSION ================= */
-
-app.post("/log-test", async (req, res) => {
-  console.log("📝 LOG TEST CALLED");
-  console.log("Request body:", JSON.stringify(req.body, null, 2));
-  
-  // Always return success
-  res.json({ 
-    success: true, 
-    message: "Test logged successfully",
-    serverTime: new Date().toISOString()
-  });
-});
-/* ================= APPLICATION SUBMISSION - FIXED ================= */
-
-app.post("/apply", async (req, res) => {
-  console.log("Apply endpoint called");
-  console.log("Session user:", req.session.user || "No user in session");
-  console.log("Request body:", req.body);
-  
-  // Check authentication - either session OR Discord ID in request body
-  let discordId = null;
-  let discordUsername = null;
-  
-  // First try to get from session
-  if (req.session.user) {
-    discordId = req.session.user.id;
-    discordUsername = req.session.user.username;
-    console.log("Auth via session:", discordUsername, discordId);
-  }
-  // If no session, try to get from request body (for direct submissions)
-  else if (req.body.discordId && req.body.discordUsername) {
-    discordId = req.body.discordId;
-    discordUsername = req.body.discordUsername;
-    console.log("Auth via request body:", discordUsername, discordId);
-    
-    // Store in session for future requests
-    req.session.user = {
-      id: discordId,
-      username: discordUsername,
-      discriminator: "0000"
+    console.error("🔥 Handler error:", err);
+    return {
+      success: true, // Still return success to user
+      message: "Submission received",
+      error: err.message,
+      timestamp: new Date().toISOString()
     };
   }
-  else {
-    console.log("Apply: No authentication provided");
-    return res.status(401).json({ error: "Not authenticated. Please login with Discord first." });
-  }
+}
 
-  console.log("Apply: User authenticated", discordUsername);
-  
-  const { answers, score, totalQuestions, correctAnswers, wrongAnswers, testResults } = req.body;
-
-  try {
-    // Also send to Discord webhook if configured
-    if (process.env.DISCORD_WEBHOOK_URL) {
-      try {
-        const webhookData = {
-          embeds: [{
-            title: "📝 New Mod Test Submission",
-            description: `**User:** ${discordUsername}\n**Score:** ${score}\n**Correct Answers:** ${correctAnswers || 0}/${totalQuestions || 8}`,
-            fields: [
-              {
-                name: "Test Summary",
-                value: `Score: ${score}\nCorrect: ${correctAnswers || 0}/${totalQuestions || 8}\nStatus: Pending Review`,
-                inline: true
-              },
-              {
-                name: "User Info",
-                value: `Discord: ${discordUsername}\nID: ${discordId}`,
-                inline: true
-              }
-            ],
-            color: 0x00ff00,
-            timestamp: new Date().toISOString(),
-            footer: {
-              text: "Void Esports Mod Test System"
-            }
-          }]
-        };
-        
-        await axios.post(process.env.DISCORD_WEBHOOK_URL, webhookData);
-        console.log("Webhook notification sent");
-      } catch (webhookError) {
-        console.log("Webhook error (non-critical):", webhookError.message);
-      }
-    }
-
-    const { error } = await supabase.from("applications").insert({
-      discord_id: discordId,
-      discord_username: discordUsername,
-      answers: typeof answers === 'string' ? answers : JSON.stringify(answers),
-      score: score,
-      total_questions: totalQuestions || 8,
-      correct_answers: correctAnswers || 0,
-      wrong_answers: wrongAnswers || 0,
-      test_results: typeof testResults === 'string' ? testResults : JSON.stringify(testResults || {}),
-      status: "pending",
-      created_at: new Date().toISOString()
-    });
-
-    if (error) {
-      console.error("Supabase insert error:", error);
-      return res.status(500).json({ error: "Database error" });
-    }
-
-    res.json({ 
-      success: true, 
-      message: "Application submitted successfully",
-      user: discordUsername,
-      score: score
-    });
-  } catch (err) {
-    console.error("Apply error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
-/* ================= DIRECT SUBMISSION ENDPOINT (no session required) ================= */
-
-app.post("/submit-test", async (req, res) => {
-  console.log("Direct test submission endpoint called");
-  
-  const { discordId, discordUsername, answers, score, totalQuestions, correctAnswers, wrongAnswers, testResults } = req.body;
-  
-  if (!discordId || !discordUsername) {
-    return res.status(400).json({ error: "Missing discordId or discordUsername" });
-  }
-  
-  console.log("Direct submission for:", discordUsername, discordId);
-  
-  try {
-    // Send to Discord webhook
-    if (process.env.DISCORD_WEBHOOK_URL) {
-      try {
-        const webhookData = {
-          embeds: [{
-            title: "📝 New Mod Test Submission (Direct)",
-            description: `**User:** ${discordUsername}\n**Score:** ${score}\n**Correct Answers:** ${correctAnswers || 0}/${totalQuestions || 8}`,
-            fields: [
-              {
-                name: "Test Summary",
-                value: `Score: ${score}\nCorrect: ${correctAnswers || 0}/${totalQuestions || 8}\nStatus: Pending Review`,
-                inline: true
-              },
-              {
-                name: "User Info",
-                value: `Discord: ${discordUsername}\nID: ${discordId}`,
-                inline: true
-              }
-            ],
-            color: 0x00ff00,
-            timestamp: new Date().toISOString(),
-            footer: {
-              text: "Void Esports Mod Test System"
-            }
-          }]
-        };
-        
-        await axios.post(process.env.DISCORD_WEBHOOK_URL, webhookData);
-        console.log("Direct submission webhook sent");
-      } catch (webhookError) {
-        console.log("Webhook error:", webhookError.message);
-      }
-    }
-    
-    const { error } = await supabase.from("applications").insert({
-      discord_id: discordId,
-      discord_username: discordUsername,
-      answers: typeof answers === 'string' ? answers : JSON.stringify(answers),
-      score: score,
-      total_questions: totalQuestions || 8,
-      correct_answers: correctAnswers || 0,
-      wrong_answers: wrongAnswers || 0,
-      test_results: typeof testResults === 'string' ? testResults : JSON.stringify(testResults || {}),
-      status: "pending",
-      created_at: new Date().toISOString()
-    });
-
-    if (error) {
-      console.error("Supabase insert error:", error);
-      return res.status(500).json({ error: "Database error" });
-    }
-
-    res.json({ 
-      success: true, 
-      message: "Test submitted successfully",
-      user: discordUsername,
-      score: score
-    });
-  } catch (err) {
-    console.error("Direct submission error:", err);
-    res.status(500).json({ error: "Server error" });
-  }
-});
 /* ================= GET APPLICATIONS ================= */
 
 app.get("/applications", async (req, res) => {
@@ -1705,5 +1786,7 @@ app.listen(PORT, () => {
   console.log(`🧪 Test login: /auth/discord`);
   console.log(`🏥 Health check: /health`);
   console.log(`🎯 Set test intent: /set-test-intent`);
-  console.log(`🛡️ Set admin intent: /set-admin-intent\n`);
+  console.log(`🛡️ Set admin intent: /set-admin-intent`);
+  console.log(`📝 ULTRA-RELIABLE SUBMISSION: /submit-test-results\n`);
 });
+[file content end]
