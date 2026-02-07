@@ -1388,6 +1388,7 @@ app.post("/submit-test-results", async (req, res) => {
     console.log("💾 Attempting to save to database...");
     
     // Prepare the application data for database
+    // In server.js, update the applicationData preparation:
     const applicationData = {
       discord_id: discordId,
       discord_username: discordUsername,
@@ -1396,11 +1397,11 @@ app.post("/submit-test-results", async (req, res) => {
       total_questions: parseInt(totalQuestions) || 8,
       correct_answers: parseInt(correctAnswers) || 0,
       wrong_answers: parseInt(wrongAnswers) || 8,
-      test_results: testResults ? (typeof testResults === 'string' ? testResults : JSON.stringify(testResults)) : "{}",
+      test_results: testResults ? (typeof testResults === 'string' ? testResults : JSON.stringify(testResults)) : "{}", // This will be TEXT, not JSONB
       status: "pending",
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
-    };
+    };     
     
     console.log("📊 Database data prepared:", {
       discord_username: applicationData.discord_username,
