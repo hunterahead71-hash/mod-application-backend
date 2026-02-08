@@ -783,296 +783,709 @@ app.get("/set-admin-intent", (req, res) => {
 
 /* ================= DISCORD AUTH - FIXED ================= */
 
-app.get("/auth/discord", (req, res) => {
-  console.log("Discord auth initiated for TEST");
-  console.log("Current session intent:", req.session.loginIntent);
-  
-  // Set test intent if not already set
-  if (!req.session.loginIntent) {
-    req.session.loginIntent = "test";
-  }
-  
-  // Store in memory as backup
-  pendingIntents.set(req.sessionID, {
-    intent: "test",
-    timestamp: Date.now()
-  });
-  
-  const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
-    process.env.DISCORD_CLIENT_ID
-  }&redirect_uri=${encodeURIComponent(
-    process.env.REDIRECT_URI
-  )}&response_type=code&scope=identify`;
+// Rate limiting for Discord auth
+const authRateLimiter = new Map(); // Store auth attempts by IP
 
-  res.redirect(redirect);
-});
-
-app.get("/auth/discord/admin", (req, res) => {
-  console.log("Discord auth initiated for ADMIN");
-  console.log("Current session intent:", req.session.loginIntent);
-  
-  // Set admin intent
-  req.session.loginIntent = "admin";
-  
-  // Store in memory as backup
-  pendingIntents.set(req.sessionID, {
-    intent: "admin",
-    timestamp: Date.now()
-  });
-  
-  const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
-    process.env.DISCORD_CLIENT_ID
-  }&redirect_uri=${encodeURIComponent(
-    process.env.REDIRECT_URI
-  )}&response_type=code&scope=identify`;
-
-  res.redirect(redirect);
-});
-
-app.get("/auth/discord/callback", async (req, res) => {
-  try {
-    console.log("\n=== DISCORD CALLBACK START ===");
-    console.log("Session ID:", req.sessionID);
-    console.log("Session loginIntent:", req.session.loginIntent);
-    console.log("Pending intents for this session:", pendingIntents.get(req.sessionID));
-    
-    const code = req.query.code;
-    if (!code) return res.status(400).send("No code provided");
-
-    // Get Discord token
-    const tokenRes = await axios.post(
-      "https://discord.com/api/oauth2/token",
-      new URLSearchParams({
-        client_id: process.env.DISCORD_CLIENT_ID,
-        client_secret: process.env.DISCORD_CLIENT_SECRET,
-        grant_type: "authorization_code",
-        code,
-        redirect_uri: process.env.REDIRECT_URI
-      }),
-      { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
-    );
-
-    // Get user info
-    const userRes = await axios.get(
-      "https://discord.com/api/users/@me",
-      {
-        headers: {
-          Authorization: `Bearer ${tokenRes.data.access_token}`
+// Clean up old entries every hour
+setInterval(() => {
+    const now = Date.now();
+    for (const [key, data] of authRateLimiter.entries()) {
+        if (now - data.timestamp > 3600000) { // 1 hour
+            authRateLimiter.delete(key);
         }
-      }
-    );
+    }
+}, 600000); // Every 10 minutes
 
-    console.log("Discord user authenticated:", userRes.data.username);
-    console.log("User ID:", userRes.data.id);
+// Middleware to check rate limiting
+function checkAuthRateLimit(req, res, next) {
+    const ip = req.headers['x-forwarded-for'] || req.ip || req.connection.remoteAddress;
+    const key = `auth_${ip}`;
+    
+    if (authRateLimiter.has(key)) {
+        const data = authRateLimiter.get(key);
+        const now = Date.now();
+        
+        // Limit to 10 auth attempts per hour per IP
+        if (data.count >= 10 && now - data.timestamp < 3600000) {
+            console.log(`Rate limited IP: ${ip} - too many auth attempts`);
+            return res.status(429).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Rate Limited</title>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #36393f; color: white; }
+                        h1 { color: #ff0033; }
+                        .retry-time { background: #202225; padding: 20px; border-radius: 10px; margin: 20px auto; max-width: 400px; }
+                    </style>
+                </head>
+                <body>
+                    <h1>⚠️ Rate Limited</h1>
+                    <p>Too many authentication attempts from your IP address.</p>
+                    <div class="retry-time">
+                        <p>Please wait at least 1 hour before trying again.</p>
+                        <p>This is a Discord API restriction to prevent abuse.</p>
+                    </div>
+                    <p><a href="https://hunterahead71-hash.github.io/void.training/" style="color: #00ffea; text-decoration: none;">Return to Training Page</a></p>
+                </body>
+                </html>
+            `);
+        }
+    }
+    
+    next();
+}
 
-    // Save user in session
-    req.session.user = userRes.data;
-    req.session.isAdmin = false;
+app.get("/auth/discord", checkAuthRateLimit, (req, res) => {
+    console.log("Discord auth initiated for TEST");
+    console.log("Current session intent:", req.session.loginIntent);
     
-    // Check if admin
-    const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
-    console.log("Admin IDs:", adminIds);
-    console.log("User ID for check:", userRes.data.id);
-    
-    if (adminIds.includes(userRes.data.id)) {
-      req.session.isAdmin = true;
-      console.log("User is admin:", userRes.data.username);
+    // Set test intent if not already set
+    if (!req.session.loginIntent) {
+        req.session.loginIntent = "test";
     }
     
-    // Check intent from session or memory backup
-    let intent = req.session.loginIntent;
-    if (!intent && pendingIntents.has(req.sessionID)) {
-      intent = pendingIntents.get(req.sessionID).intent;
-      req.session.loginIntent = intent;
-    }
+    // Store in memory as backup
+    pendingIntents.set(req.sessionID, {
+        intent: "test",
+        timestamp: Date.now()
+    });
     
-    console.log("Final determined intent:", intent);
+    const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
+        process.env.DISCORD_CLIENT_ID
+    }&redirect_uri=${encodeURIComponent(
+        process.env.REDIRECT_URI
+    )}&response_type=code&scope=identify`;
+
+    res.redirect(redirect);
+});
+
+app.get("/auth/discord/admin", checkAuthRateLimit, (req, res) => {
+    console.log("Discord auth initiated for ADMIN");
+    console.log("Current session intent:", req.session.loginIntent);
     
-    // Clean up memory backup
-    if (pendingIntents.has(req.sessionID)) {
-      pendingIntents.delete(req.sessionID);
-    }
+    // Set admin intent
+    req.session.loginIntent = "admin";
     
-    // SAVE SESSION
-    req.session.save((err) => {
-      if (err) {
-        console.error("Session save error in callback:", err);
-        return res.status(500).send(`
-          <!DOCTYPE html>
-          <html>
-          <head><title>Session Error</title></head>
-          <body>
-            <h1>Session Error</h1>
-            <p>Could not save your session. Please try again.</p>
-            <p><a href="/auth/discord">Retry Login</a></p>
-          </body>
-          </html>
-        `);
-      }
-      
-      console.log("Session saved successfully!");
-      console.log("User in session:", req.session.user.username);
-      console.log("Is Admin:", req.session.isAdmin);
-      console.log("Login Intent:", req.session.loginIntent);
-      
-      // FOR ADMINS WITH ADMIN INTENT: Redirect to admin panel
-      if (req.session.isAdmin && intent === "admin") {
-        console.log("Redirecting admin to /admin");
-        req.session.loginIntent = null; // Clear intent
-        req.session.save(() => {
-          return res.redirect("/admin");
+    // Store in memory as backup
+    pendingIntents.set(req.sessionID, {
+        intent: "admin",
+        timestamp: Date.now()
+    });
+    
+    const redirect = `https://discord.com/api/oauth2/authorize?client_id=${
+        process.env.DISCORD_CLIENT_ID
+    }&redirect_uri=${encodeURIComponent(
+        process.env.REDIRECT_URI
+    )}&response_type=code&scope=identify`;
+
+    res.redirect(redirect);
+});
+
+app.get("/auth/discord/callback", checkAuthRateLimit, async (req, res) => {
+    try {
+        console.log("\n=== DISCORD CALLBACK START ===");
+        console.log("Session ID:", req.sessionID);
+        console.log("Session loginIntent:", req.session.loginIntent);
+        console.log("Pending intents for this session:", pendingIntents.get(req.sessionID));
+        
+        const code = req.query.code;
+        if (!code) return res.status(400).send("No code provided");
+
+        // Track auth attempts
+        const ip = req.headers['x-forwarded-for'] || req.ip || req.connection.remoteAddress;
+        const key = `auth_${ip}`;
+        const now = Date.now();
+        
+        if (authRateLimiter.has(key)) {
+            const data = authRateLimiter.get(key);
+            data.count += 1;
+            data.timestamp = now;
+        } else {
+            authRateLimiter.set(key, { count: 1, timestamp: now });
+        }
+
+        // Get Discord token with retry logic
+        let tokenRes;
+        let retryCount = 0;
+        const maxRetries = 3;
+        
+        while (retryCount < maxRetries) {
+            try {
+                tokenRes = await axios.post(
+                    "https://discord.com/api/oauth2/token",
+                    new URLSearchParams({
+                        client_id: process.env.DISCORD_CLIENT_ID,
+                        client_secret: process.env.DISCORD_CLIENT_SECRET,
+                        grant_type: "authorization_code",
+                        code,
+                        redirect_uri: process.env.REDIRECT_URI
+                    }),
+                    { 
+                        headers: { 
+                            "Content-Type": "application/x-www-form-urlencoded",
+                            "User-Agent": "VoidEsportsBot/1.0.0"
+                        },
+                        timeout: 10000 // 10 second timeout
+                    }
+                );
+                break; // Success, exit retry loop
+            } catch (error) {
+                retryCount++;
+                console.error(`Discord token request failed (attempt ${retryCount}/${maxRetries}):`, error.message);
+                
+                if (error.response && error.response.status === 429) {
+                    // Rate limited by Discord
+                    const retryAfter = error.response.headers['retry-after'] || 60;
+                    console.log(`Rate limited by Discord. Retrying after ${retryAfter} seconds...`);
+                    
+                    if (retryCount < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                        continue;
+                    } else {
+                        throw new Error(`Discord API rate limited. Please try again in ${retryAfter} seconds.`);
+                    }
+                } else if (retryCount === maxRetries) {
+                    throw error;
+                }
+                
+                // Wait 2 seconds before retrying
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+
+        // Get user info with retry logic
+        let userRes;
+        retryCount = 0;
+        
+        while (retryCount < maxRetries) {
+            try {
+                userRes = await axios.get(
+                    "https://discord.com/api/users/@me",
+                    {
+                        headers: {
+                            Authorization: `Bearer ${tokenRes.data.access_token}`,
+                            "User-Agent": "VoidEsportsBot/1.0.0"
+                        },
+                        timeout: 10000
+                    }
+                );
+                break; // Success, exit retry loop
+            } catch (error) {
+                retryCount++;
+                console.error(`Discord user request failed (attempt ${retryCount}/${maxRetries}):`, error.message);
+                
+                if (error.response && error.response.status === 429) {
+                    const retryAfter = error.response.headers['retry-after'] || 60;
+                    console.log(`Rate limited by Discord. Retrying after ${retryAfter} seconds...`);
+                    
+                    if (retryCount < maxRetries) {
+                        await new Promise(resolve => setTimeout(resolve, retryAfter * 1000));
+                        continue;
+                    } else {
+                        throw new Error(`Discord API rate limited. Please try again in ${retryAfter} seconds.`);
+                    }
+                } else if (retryCount === maxRetries) {
+                    throw error;
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, 2000));
+            }
+        }
+
+        console.log("Discord user authenticated:", userRes.data.username);
+        console.log("User ID:", userRes.data.id);
+
+        // Save user in session
+        req.session.user = userRes.data;
+        req.session.isAdmin = false;
+        
+        // Check if admin
+        const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
+        console.log("Admin IDs:", adminIds);
+        console.log("User ID for check:", userRes.data.id);
+        
+        if (adminIds.includes(userRes.data.id)) {
+            req.session.isAdmin = true;
+            console.log("User is admin:", userRes.data.username);
+        }
+        
+        // Check intent from session or memory backup
+        let intent = req.session.loginIntent;
+        if (!intent && pendingIntents.has(req.sessionID)) {
+            intent = pendingIntents.get(req.sessionID).intent;
+            req.session.loginIntent = intent;
+        }
+        
+        console.log("Final determined intent:", intent);
+        
+        // Clean up memory backup
+        if (pendingIntents.has(req.sessionID)) {
+            pendingIntents.delete(req.sessionID);
+        }
+        
+        // SAVE SESSION
+        req.session.save((err) => {
+            if (err) {
+                console.error("Session save error in callback:", err);
+                return res.status(500).send(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Session Error</title></head>
+                    <body>
+                        <h1>Session Error</h1>
+                        <p>Could not save your session. Please try again.</p>
+                        <p><a href="/auth/discord">Retry Login</a></p>
+                    </body>
+                    </html>
+                `);
+            }
+            
+            console.log("Session saved successfully!");
+            console.log("User in session:", req.session.user.username);
+            console.log("Is Admin:", req.session.isAdmin);
+            console.log("Login Intent:", req.session.loginIntent);
+            
+            // FOR ADMINS WITH ADMIN INTENT: Redirect to admin panel
+            if (req.session.isAdmin && intent === "admin") {
+                console.log("Redirecting admin to /admin");
+                req.session.loginIntent = null; // Clear intent
+                req.session.save(() => {
+                    return res.redirect("/admin");
+                });
+                return;
+            }
+            
+            // FOR REGULAR USERS WHO ACCIDENTALLY CLICKED ADMIN LOGIN
+            if (intent === "admin" && !req.session.isAdmin) {
+                console.log("Non-admin trying to access admin panel");
+                req.session.loginIntent = null;
+                req.session.save(() => {
+                    return res.send(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>Access Denied</title>
+                            <meta charset="UTF-8">
+                            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+                            <style>
+                                body { 
+                                    font-family: Arial, sans-serif; 
+                                    text-align: center; 
+                                    padding: 50px; 
+                                    background: #36393f;
+                                    color: white;
+                                    margin: 0;
+                                }
+                                h1 { color: #ff0033; }
+                                .error-container {
+                                    background: #202225;
+                                    padding: 40px;
+                                    border-radius: 12px;
+                                    margin: 30px auto;
+                                    max-width: 600px;
+                                    text-align: left;
+                                }
+                                .user-info {
+                                    background: #2f3136;
+                                    padding: 20px;
+                                    border-radius: 8px;
+                                    margin: 20px 0;
+                                }
+                                .contact-link {
+                                    color: #5865f2;
+                                    font-weight: bold;
+                                    text-decoration: none;
+                                }
+                                .contact-link:hover {
+                                    text-decoration: underline;
+                                }
+                                .action-buttons {
+                                    margin-top: 30px;
+                                    display: flex;
+                                    gap: 15px;
+                                    justify-content: center;
+                                    flex-wrap: wrap;
+                                }
+                                .action-btn {
+                                    padding: 12px 24px;
+                                    border-radius: 8px;
+                                    text-decoration: none;
+                                    font-weight: bold;
+                                    color: white;
+                                    display: inline-flex;
+                                    align-items: center;
+                                    gap: 8px;
+                                }
+                                .test-btn {
+                                    background: #5865f2;
+                                }
+                                .home-btn {
+                                    background: #3ba55c;
+                                }
+                            </style>
+                        </head>
+                        <body>
+                            <h1><i class="fas fa-ban"></i> Access Denied</h1>
+                            <p>You don't have administrator privileges.</p>
+                            
+                            <div class="error-container">
+                                <div class="user-info">
+                                    <p><strong>Your Discord:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
+                                    <p><strong>Your ID:</strong> ${req.session.user.id}</p>
+                                </div>
+                                
+                                <p>If you need admin access, contact <a href="https://discord.com/users/727888300210913310" class="contact-link" target="_blank">@nicksscold</a> on Discord.</p>
+                                
+                                <p>If you were trying to take the moderator test, use the "Begin Certification Test" button on the training page.</p>
+                            </div>
+                            
+                            <div class="action-buttons">
+                                <a href="https://hunterahead71-hash.github.io/void.training/" class="action-btn home-btn">
+                                    <i class="fas fa-home"></i> Return to Training
+                                </a>
+                                <a href="/auth/discord" class="action-btn test-btn">
+                                    <i class="fas fa-vial"></i> Take Mod Test Instead
+                                </a>
+                            </div>
+                        </body>
+                        </html>
+                    `);
+                });
+                return;
+            }
+            
+            // FOR REGULAR USERS WITH TEST INTENT: Redirect to test
+            if (intent === "test") {
+                console.log("User has test intent, redirecting to test interface");
+                req.session.loginIntent = null; // Clear after use
+                
+                req.session.save(() => {
+                    // Create redirect URL with user data
+                    const frontendUrl = `https://hunterahead71-hash.github.io/void.training/?startTest=1&discord_username=${encodeURIComponent(userRes.data.username)}&discord_id=${userRes.data.id}&timestamp=${Date.now()}`;
+                    console.log("Redirecting to test:", frontendUrl);
+                    
+                    return res.send(`
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>Redirecting to Test...</title>
+                            <script>
+                                window.location.href = "${frontendUrl}";
+                            </script>
+                        </head>
+                        <body>
+                            <p>Redirecting to test... Please wait.</p>
+                            <p>If you are not redirected, <a href="${frontendUrl}">click here</a>.</p>
+                        </body>
+                        </html>
+                    `);
+                });
+                return;
+            }
+            
+            // FOR ANY OTHER CASE (no intent): Redirect to homepage
+            console.log("No specific intent, redirecting to homepage");
+            return res.redirect("https://hunterahead71-hash.github.io/void.training/");
         });
-        return;
-      }
-      
-      // FOR REGULAR USERS WHO ACCIDENTALLY CLICKED ADMIN LOGIN
-      if (intent === "admin" && !req.session.isAdmin) {
-        console.log("Non-admin trying to access admin panel");
-        req.session.loginIntent = null;
-        req.session.save(() => {
-          return res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <title>Access Denied</title>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-              <style>
+
+    } catch (err) {
+        console.error("Discord auth error:", err);
+        
+        // Check if it's a rate limit error
+        if (err.message.includes("rate limited") || (err.response && err.response.status === 429)) {
+            const retryAfter = err.response?.headers?.['retry-after'] || 60;
+            const retryTime = new Date(Date.now() + (retryAfter * 1000)).toLocaleTimeString();
+            
+            res.status(429).send(`
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Rate Limited by Discord</title>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <style>
+                        body { 
+                            font-family: Arial, sans-serif; 
+                            text-align: center; 
+                            padding: 50px; 
+                            background: #36393f;
+                            color: white;
+                        }
+                        h1 { color: #ff0033; }
+                        .info-box {
+                            background: #202225;
+                            padding: 30px;
+                            border-radius: 12px;
+                            margin: 30px auto;
+                            max-width: 600px;
+                            text-align: left;
+                            border-left: 5px solid #f59e0b;
+                        }
+                        .retry-info {
+                            background: #2f3136;
+                            padding: 20px;
+                            border-radius: 8px;
+                            margin: 20px 0;
+                        }
+                        .tips {
+                            background: rgba(0, 255, 234, 0.1);
+                            padding: 15px;
+                            border-radius: 8px;
+                            margin: 20px 0;
+                            border: 1px solid rgba(0, 255, 234, 0.2);
+                        }
+                        .action-buttons {
+                            margin-top: 30px;
+                            display: flex;
+                            gap: 15px;
+                            justify-content: center;
+                            flex-wrap: wrap;
+                        }
+                        .action-btn {
+                            padding: 12px 24px;
+                            border-radius: 8px;
+                            text-decoration: none;
+                            font-weight: bold;
+                            color: white;
+                            display: inline-flex;
+                            align-items: center;
+                            gap: 8px;
+                            transition: all 0.3s ease;
+                        }
+                        .home-btn {
+                            background: #3ba55c;
+                        }
+                        .home-btn:hover {
+                            background: #2d8b4f;
+                            transform: translateY(-2px);
+                        }
+                        code {
+                            background: #2f3136;
+                            padding: 4px 8px;
+                            border-radius: 4px;
+                            font-family: monospace;
+                            color: #00ffea;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <h1><i class="fas fa-hourglass-half"></i> Rate Limited by Discord</h1>
+                    <p>Too many authentication requests to Discord's API.</p>
+                    
+                    <div class="info-box">
+                        <div class="retry-info">
+                            <h3><i class="fas fa-clock"></i> Retry Information</h3>
+                            <p><strong>Error:</strong> ${err.message}</p>
+                            <p><strong>Wait Time:</strong> ${retryAfter} seconds</p>
+                            <p><strong>Retry After:</strong> ${retryTime}</p>
+                        </div>
+                        
+                        <div class="tips">
+                            <h3><i class="fas fa-lightbulb"></i> What to do:</h3>
+                            <ol>
+                                <li>Wait at least <code>${retryAfter}</code> seconds before trying again</li>
+                                <li>If you're testing, wait longer between attempts</li>
+                                <li>Clear your browser cache and cookies</li>
+                                <li>Try using a different browser or incognito mode</li>
+                                <li>This is a Discord API restriction, not your fault</li>
+                            </ol>
+                        </div>
+                        
+                        <p><strong>Note:</strong> This happens when there are too many authentication attempts in a short period. Discord limits requests to prevent abuse.</p>
+                    </div>
+                    
+                    <div class="action-buttons">
+                        <a href="https://hunterahead71-hash.github.io/void.training/" class="action-btn home-btn">
+                            <i class="fas fa-home"></i> Return to Training
+                        </a>
+                        <a href="javascript:location.reload()" class="action-btn" style="background: #5865f2;">
+                            <i class="fas fa-redo"></i> Try Again Later
+                        </a>
+                    </div>
+                    
+                    <script>
+                        // Auto-retry after the specified time
+                        setTimeout(() => {
+                            document.querySelector('.action-buttons').innerHTML += \`
+                                <a href="/auth/discord" class="action-btn" style="background: #f59e0b;">
+                                    <i class="fas fa-check-circle"></i> Ready to Retry
+                                </a>
+                            \`;
+                        }, ${retryAfter * 1000});
+                        
+                        // Update countdown
+                        let timeLeft = ${retryAfter};
+                        const countdownEl = document.createElement('div');
+                        countdownEl.innerHTML = \`<p>Auto-retry in: <span id="countdown">\${timeLeft}</span> seconds</p>\`;
+                        document.querySelector('.retry-info').appendChild(countdownEl);
+                        
+                        const countdownInterval = setInterval(() => {
+                            timeLeft--;
+                            document.getElementById('countdown').textContent = timeLeft;
+                            if (timeLeft <= 0) {
+                                clearInterval(countdownInterval);
+                            }
+                        }, 1000);
+                    </script>
+                </body>
+                </html>
+            `);
+        } else {
+            // Other errors
+            res.status(500).send(`
+                <!DOCTYPE html>
+                <html>
+                <head><title>Auth Error</title></head>
+                <body>
+                    <h1>Discord Authentication Failed</h1>
+                    <p>${err.message}</p>
+                    <p><a href="/auth/discord">Try Again</a></p>
+                </body>
+                </html>
+            `);
+        }
+    }
+});
+
+/* ================= FALLBACK LOGIN (for rate limiting) ================= */
+
+app.get("/fallback-login", (req, res) => {
+    res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Alternative Login</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <style>
                 body { 
-                  font-family: Arial, sans-serif; 
-                  text-align: center; 
-                  padding: 50px; 
-                  background: #36393f;
-                  color: white;
-                  margin: 0;
+                    font-family: Arial, sans-serif; 
+                    text-align: center; 
+                    padding: 50px; 
+                    background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+                    color: white;
                 }
-                h1 { color: #ff0033; }
-                .error-container {
-                  background: #202225;
-                  padding: 40px;
-                  border-radius: 12px;
-                  margin: 30px auto;
-                  max-width: 600px;
-                  text-align: left;
+                .login-box {
+                    background: rgba(32, 34, 37, 0.9);
+                    padding: 40px;
+                    border-radius: 20px;
+                    margin: 30px auto;
+                    max-width: 500px;
+                    border: 1px solid rgba(255, 0, 51, 0.2);
+                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
                 }
-                .user-info {
-                  background: #2f3136;
-                  padding: 20px;
-                  border-radius: 8px;
-                  margin: 20px 0;
+                .form-group {
+                    margin: 20px 0;
+                    text-align: left;
                 }
-                .contact-link {
-                  color: #5865f2;
-                  font-weight: bold;
-                  text-decoration: none;
+                label {
+                    display: block;
+                    margin-bottom: 8px;
+                    color: #888;
+                    font-weight: bold;
                 }
-                .contact-link:hover {
-                  text-decoration: underline;
+                input {
+                    width: 100%;
+                    padding: 12px;
+                    background: rgba(0, 0, 0, 0.3);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 8px;
+                    color: white;
+                    font-size: 16px;
                 }
-                .action-buttons {
-                  margin-top: 30px;
-                  display: flex;
-                  gap: 15px;
-                  justify-content: center;
-                  flex-wrap: wrap;
+                input:focus {
+                    outline: none;
+                    border-color: #00ffea;
                 }
-                .action-btn {
-                  padding: 12px 24px;
-                  border-radius: 8px;
-                  text-decoration: none;
-                  font-weight: bold;
-                  color: white;
-                  display: inline-flex;
-                  align-items: center;
-                  gap: 8px;
+                .submit-btn {
+                    background: linear-gradient(135deg, #5865f2, #4752c4);
+                    color: white;
+                    border: none;
+                    padding: 15px 30px;
+                    border-radius: 8px;
+                    font-size: 18px;
+                    font-weight: bold;
+                    cursor: pointer;
+                    width: 100%;
+                    margin-top: 20px;
+                    transition: all 0.3s ease;
                 }
-                .test-btn {
-                  background: #5865f2;
+                .submit-btn:hover {
+                    transform: translateY(-2px);
+                    box-shadow: 0 8px 25px rgba(88, 101, 242, 0.4);
                 }
-                .home-btn {
-                  background: #3ba55c;
+                .warning {
+                    background: rgba(245, 158, 11, 0.2);
+                    border: 1px solid rgba(245, 158, 11, 0.3);
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin: 20px 0;
+                    text-align: left;
                 }
-              </style>
-            </head>
-            <body>
-              <h1><i class="fas fa-ban"></i> Access Denied</h1>
-              <p>You don't have administrator privileges.</p>
-              
-              <div class="error-container">
-                <div class="user-info">
-                  <p><strong>Your Discord:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
-                  <p><strong>Your ID:</strong> ${req.session.user.id}</p>
+            </style>
+        </head>
+        <body>
+            <h1>Alternative Login Method</h1>
+            <p>Use this if Discord authentication is rate limited</p>
+            
+            <div class="login-box">
+                <div class="warning">
+                    <h3><i class="fas fa-exclamation-triangle"></i> Note:</h3>
+                    <p>This is a fallback method. For full functionality, use Discord OAuth when available.</p>
+                    <p>Your information will be verified when the Discord API is accessible.</p>
                 </div>
                 
-                <p>If you need admin access, contact <a href="https://discord.com/users/727888300210913310" class="contact-link" target="_blank">@nicksscold</a> on Discord.</p>
+                <form id="fallbackForm">
+                    <div class="form-group">
+                        <label for="discordUsername">Discord Username</label>
+                        <input type="text" id="discordUsername" placeholder="YourDiscordUsername#0000" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="discordId">Discord ID (numeric)</label>
+                        <input type="text" id="discordId" placeholder="123456789012345678" pattern="\\d+" required>
+                        <small>Find your ID: Discord Settings → Advanced → Developer Mode → Right-click user → Copy ID</small>
+                    </div>
+                    
+                    <button type="submit" class="submit-btn">
+                        <i class="fas fa-sign-in-alt"></i> Continue to Test
+                    </button>
+                </form>
                 
-                <p>If you were trying to take the moderator test, use the "Begin Certification Test" button on the training page.</p>
-              </div>
-              
-              <div class="action-buttons">
-                <a href="https://hunterahead71-hash.github.io/void.training/" class="action-btn home-btn">
-                  <i class="fas fa-home"></i> Return to Training
-                </a>
-                <a href="/auth/discord" class="action-btn test-btn">
-                  <i class="fas fa-vial"></i> Take Mod Test Instead
-                </a>
-              </div>
-            </body>
-            </html>
-          `);
-        });
-        return;
-      }
-      
-      // FOR REGULAR USERS WITH TEST INTENT: Redirect to test
-      if (intent === "test") {
-        console.log("User has test intent, redirecting to test interface");
-        req.session.loginIntent = null; // Clear after use
-        
-        req.session.save(() => {
-          // Create redirect URL with user data
-          const frontendUrl = `https://hunterahead71-hash.github.io/void.training/?startTest=1&discord_username=${encodeURIComponent(userRes.data.username)}&discord_id=${userRes.data.id}&timestamp=${Date.now()}`;
-          console.log("Redirecting to test:", frontendUrl);
-          
-          return res.send(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-              <title>Redirecting to Test...</title>
-              <script>
-                window.location.href = "${frontendUrl}";
-              </script>
-            </head>
-            <body>
-              <p>Redirecting to test... Please wait.</p>
-              <p>If you are not redirected, <a href="${frontendUrl}">click here</a>.</p>
-            </body>
-            </html>
-          `);
-        });
-        return;
-      }
-      
-      // FOR ANY OTHER CASE (no intent): Redirect to homepage
-      console.log("No specific intent, redirecting to homepage");
-      return res.redirect("https://hunterahead71-hash.github.io/void.training/");
-    });
-
-  } catch (err) {
-    console.error("Discord auth error:", err);
-    res.status(500).send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Auth Error</title></head>
-      <body>
-        <h1>Discord Authentication Failed</h1>
-        <p>${err.message}</p>
-        <p><a href="/auth/discord">Try Again</a></p>
-      </body>
-      </html>
+                <p style="margin-top: 20px;">
+                    <a href="/auth/discord" style="color: #00ffea;">Try Discord OAuth again</a>
+                </p>
+            </div>
+            
+            <script>
+                document.getElementById('fallbackForm').addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    const username = document.getElementById('discordUsername').value;
+                    const id = document.getElementById('discordId').value;
+                    
+                    if (!username || !id) {
+                        alert('Please fill in all fields');
+                        return;
+                    }
+                    
+                    if (!/^\\d+$/.test(id)) {
+                        alert('Discord ID must be numeric only');
+                        return;
+                    }
+                    
+                    // Redirect to test with manual credentials
+                    const frontendUrl = \`https://hunterahead71-hash.github.io/void.training/?startTest=1&discord_username=\${encodeURIComponent(username)}&discord_id=\${id}&manual_login=true&timestamp=\${Date.now()}\`;
+                    window.location.href = frontendUrl;
+                });
+            </script>
+        </body>
+        </html>
     `);
-  }
 });
 
 /* ================= AUTH CHECK ================= */
@@ -2994,7 +3407,43 @@ app.get("/admin", async (req, res) => {
         `);
     }
 });
+/* ================= DISCORD API STATUS CHECK ================= */
 
+app.get("/api/discord-status", async (req, res) => {
+    try {
+        // Try to get Discord status
+        const response = await axios.get("https://discordstatus.com/api/v2/status.json", {
+            timeout: 5000
+        });
+        
+        res.json({
+            success: true,
+            discord_api: response.data.status.indicator === "none" ? "operational" : "issues",
+            description: response.data.status.description,
+            indicator: response.data.status.indicator,
+            timestamp: new Date().toISOString(),
+            rate_limit_info: {
+                message: "If you're getting 429 errors, wait 60 seconds between auth attempts",
+                retry_after: 60,
+                max_attempts_per_hour: 10
+            }
+        });
+    } catch (error) {
+        res.json({
+            success: false,
+            error: error.message,
+            timestamp: new Date().toISOString(),
+            rate_limit_advice: {
+                message: "Discord API may be rate limiting. Wait 60 seconds before trying again.",
+                common_causes: [
+                    "Too many login attempts from same IP",
+                    "Multiple users testing simultaneously",
+                    "Rapid refreshing of auth page"
+                ]
+            }
+        });
+    }
+});
 /* ================= ADMIN GET CONVERSATION ENDPOINT ================= */
 
 app.get("/admin/conversation/:id", async (req, res) => {
