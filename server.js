@@ -2698,10 +2698,15 @@ app.get("/admin", async (req, res) => {
                             
                             console.log('Action result:', result);
                             
-                            if (response.ok) {
-                                // Remove success/error messages if they exist
-                                const existingMessage = appCard.querySelector('.success-message, .error-message');
-                                if (existingMessage) existingMessage.remove();
+                           if (response.ok && result.success) {
+    // success UI
+                              setTimeout(() => {
+                                  updateApplicationCardStatus(appId, action === 'accept' ? 'accepted' : 'rejected', result);
+                              }, 1200);
+                          } else {
+                              throw new Error(result.error || result.message || "Unknown error");
+                          }
+
                                 
                                 // Create success message
                                 const messageDiv = document.createElement('div');
