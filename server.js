@@ -1100,1703 +1100,1903 @@ app.get("/me", (req, res) => {
 /* ================= ADVANCED ADMIN PORTAL ================= */
 
 app.get("/admin", async (req, res) => {
-  console.log("\n=== ADMIN PAGE ACCESS ===");
-  console.log("Session User:", req.session.user || 'No user');
-  console.log("Session isAdmin:", req.session.isAdmin);
-  console.log("Admin IDs:", process.env.ADMIN_IDS);
-  
-  // Check if user is logged in
-  if (!req.session.user) {
-    console.log("No user in session, redirecting to login");
-    return res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Not Logged In</title>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-          body { 
-            font-family: Arial, sans-serif; 
-            text-align: center; 
-            padding: 50px; 
-            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
-            color: white;
-            margin: 0;
-          }
-          h1 { color: #ff0033; }
-          .login-btn {
-            display: inline-block;
-            margin: 20px;
-            padding: 15px 30px;
-            background: linear-gradient(135deg, #5865f2, #4752c4);
-            color: white;
-            text-decoration: none;
-            border-radius: 8px;
-            font-weight: bold;
-            font-size: 18px;
-            box-shadow: 0 4px 15px rgba(88, 101, 242, 0.3);
-            transition: all 0.3s ease;
-          }
-          .login-btn:hover {
-            background: linear-gradient(135deg, #4752c4, #5865f2);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(88, 101, 242, 0.4);
-          }
-          .debug-info {
-            background: rgba(32, 34, 37, 0.8);
-            padding: 20px;
-            border-radius: 10px;
-            margin: 30px auto;
-            max-width: 800px;
-            text-align: left;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-          }
-        </style>
-      </head>
-      <body>
-        <h1><i class="fas fa-exclamation-triangle"></i> Not Logged In</h1>
-        <p>You need to log in with Discord to access the admin panel.</p>
-        
-        <a href="/auth/discord/admin" class="login-btn">
-          <i class="fab fa-discord"></i> Login with Discord
-        </a>
-        
-        <div class="debug-info">
-          <strong>Debug Info:</strong><br>
-          Session ID: ${req.sessionID || 'None'}<br>
-          User in Session: ${req.session.user ? 'Yes' : 'No'}<br>
-          Cookie Header: ${req.headers.cookie || 'None'}
-        </div>
-      </body>
-      </html>
-    `);
-  }
-  
-  // Check if user is admin
-  const adminIds = process.env.ADMIN_IDS ? process.env.ADMIN_IDS.split(",") : [];
-  const userId = req.session.user.id;
-  
-  console.log("Checking if user is admin:");
-  console.log("User ID:", userId);
-  console.log("Admin IDs:", adminIds);
-  console.log("Is user in admin list?", adminIds.includes(userId));
-  
-  if (!adminIds.includes(userId)) {
-    console.log("User is NOT an admin");
-    return res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Access Denied</title>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-          body { 
-            font-family: Arial, sans-serif; 
-            text-align: center; 
-            padding: 50px; 
-            background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
-            color: white;
-            margin: 0;
-          }
-          h1 { color: #ff0033; }
-          .user-info {
-            background: rgba(32, 34, 37, 0.8);
-            padding: 20px;
-            border-radius: 10px;
-            margin: 30px auto;
-            max-width: 600px;
-            text-align: left;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-          }
-          .contact-link {
-            color: #5865f2;
-            font-weight: bold;
-            text-decoration: none;
-          }
-          .contact-link:hover {
-            text-decoration: underline;
-          }
-          .action-buttons {
-            margin-top: 30px;
-          }
-          .action-btn {
-            display: inline-block;
-            margin: 10px;
-            padding: 12px 24px;
-            background: linear-gradient(135deg, #5865f2, #4752c4);
-            color: white;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: bold;
-            transition: all 0.3s ease;
-          }
-          .logout-btn {
-            background: linear-gradient(135deg, #ed4245, #c03939);
-          }
-          .action-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-          }
-        </style>
-      </head>
-      <body>
-        <h1><i class="fas fa-ban"></i> Access Denied</h1>
-        <p>You don't have administrator privileges.</p>
-        
-        <div class="user-info">
-          <p><strong>Your Discord:</strong> ${req.session.user.username}#${req.session.user.discriminator}</p>
-          <p><strong>Your ID:</strong> ${req.session.user.id}</p>
-          <p><strong>Your session ID:</strong> ${req.sessionID}</p>
-        </div>
-        
-        <p>If you need admin access, contact <a href="https://discord.com/users/727888300210913310" class="contact-link" target="_blank">@nicksscold</a> on Discord.</p>
-        
-        <div class="action-buttons">
-          <a href="/logout" class="action-btn logout-btn">
-            <i class="fas fa-sign-out-alt"></i> Logout
-          </a>
-          <a href="https://hunterahead71-hash.github.io/void.training/" class="action-btn">
-            <i class="fas fa-home"></i> Return to Training
-          </a>
-          <a href="/auth/discord" class="action-btn">
-            <i class="fas fa-vial"></i> Take Mod Test
-          </a>
-        </div>
-      </body>
-      </html>
-    `);
-  }
-
-  console.log("User is admin, loading applications...");
-  
-  try {
-    // Get applications from database
-    const { data: applications, error } = await supabase
-      .from("applications")
-      .select("*")
-      .order("created_at", { ascending: false });
-
-    if (error) {
-      console.error("Supabase error:", error);
-      return res.status(500).send(`
-        <!DOCTYPE html>
-        <html>
-        <head><title>Database Error</title></head>
-        <body>
-          <h1>Database Error</h1>
-          <p>Could not load applications.</p>
-          <p><a href="/admin">Try Again</a></p>
-        </body>
-        </html>
-      `);
-    }
-
-    console.log(`Found ${applications.length} total applications in database`);
+    console.log("\n=== ADMIN PAGE ACCESS ===");
     
-    // Filter out test users
-    const realApplications = applications.filter(app => {
-      const username = app.discord_username.toLowerCase();
-      const id = app.discord_id;
-      
-      // Skip obvious test users
-      const isTestUser = 
-        username.includes('test') || 
-        username.includes('bot') ||
-        id.includes('test') ||
-        id === '0000' ||
-        username === 'user' ||
-        username.includes('example') ||
-        id.length < 5 ||
-        username.startsWith('test_') ||
-        id.startsWith('test_') ||
-        username.includes('demo') ||
-        id === '123456789' ||
-        username.includes('fake') ||
-        username.includes('dummy');
-      
-      return !isTestUser;
-    });
-
-    console.log(`Filtered to ${realApplications.length} real applications (removed ${applications.length - realApplications.length} test users)`);
-    
-    // Calculate statistics
-    const pendingApplications = realApplications.filter(app => app.status === 'pending');
-    const acceptedApplications = realApplications.filter(app => app.status === 'accepted');
-    const rejectedApplications = realApplications.filter(app => app.status === 'rejected');
-    
-    // Advanced admin dashboard HTML
-    let html = `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Void Esports - Advanced Admin Dashboard</title>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-        <style>
-          :root {
-            --void-abyss: #000010;
-            --void-blood: #ff0033;
-            --void-neon: #00ffea;
-            --void-purple: #8b5cf6;
-            --discord-bg: #36393f;
-            --discord-primary: #202225;
-            --discord-secondary: #2f3136;
-            --discord-tertiary: #40444b;
-            --discord-green: #3ba55c;
-            --discord-red: #ed4245;
-            --discord-yellow: #f59e0b;
-          }
-          
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          
-          body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            background: linear-gradient(135deg, var(--void-abyss) 0%, #0a0a1a 50%, #1a002a 100%);
-            color: #ffffff;
-            min-height: 100vh;
-            -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
-          }
-          
-          .admin-container {
-            max-width: 1600px;
-            margin: 0 auto;
-            padding: 20px;
-          }
-          
-          /* Header */
-          .header {
-            background: linear-gradient(135deg, rgba(255, 0, 51, 0.1), rgba(0, 255, 234, 0.05));
-            border: 1px solid rgba(255, 0, 51, 0.2);
-            border-radius: 20px;
-            padding: 30px;
-            margin-bottom: 30px;
-            backdrop-filter: blur(10px);
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-          }
-          
-          .header-top {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 30px;
-          }
-          
-          .header-title {
-            font-size: 32px;
-            font-weight: 800;
-            background: linear-gradient(135deg, #ff0033, #00ffea);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            text-shadow: 0 0 30px rgba(255, 0, 51, 0.3);
-          }
-          
-          .header-user {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            background: rgba(32, 34, 37, 0.8);
-            padding: 12px 20px;
-            border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-          }
-          
-          .user-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #ff0033, #8b5cf6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 18px;
-          }
-          
-          .user-info {
-            display: flex;
-            flex-direction: column;
-          }
-          
-          .username {
-            font-weight: 600;
-            font-size: 16px;
-          }
-          
-          .user-role {
-            font-size: 12px;
-            color: #00ffea;
-            background: rgba(0, 255, 234, 0.1);
-            padding: 2px 8px;
-            border-radius: 10px;
-            display: inline-block;
-            margin-top: 2px;
-          }
-          
-          .header-actions {
-            display: flex;
-            gap: 12px;
-          }
-          
-          .header-btn {
-            padding: 10px 20px;
-            background: linear-gradient(135deg, #5865f2, #4752c4);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            font-size: 14px;
-          }
-          
-          .header-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(88, 101, 242, 0.4);
-          }
-          
-          .logout-btn {
-            background: linear-gradient(135deg, #ed4245, #c03939);
-          }
-          
-          /* Stats Grid */
-          .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-          }
-          
-          .stat-card {
-            background: linear-gradient(135deg, rgba(32, 34, 37, 0.9), rgba(47, 49, 54, 0.9));
-            border-radius: 16px;
-            padding: 25px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            backdrop-filter: blur(10px);
-            transition: all 0.3s ease;
-            cursor: pointer;
-          }
-          
-          .stat-card:hover {
-            transform: translateY(-5px);
-            border-color: rgba(0, 255, 234, 0.3);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-          }
-          
-          .stat-card.pending { border-left: 5px solid var(--discord-yellow); }
-          .stat-card.accepted { border-left: 5px solid var(--discord-green); }
-          .stat-card.rejected { border-left: 5px solid var(--discord-red); }
-          .stat-card.total { border-left: 5px solid var(--void-purple); }
-          
-          .stat-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 15px;
-          }
-          
-          .stat-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-          }
-          
-          .stat-card.pending .stat-icon { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
-          .stat-card.accepted .stat-icon { background: rgba(59, 165, 92, 0.2); color: #3ba55c; }
-          .stat-card.rejected .stat-icon { background: rgba(237, 66, 69, 0.2); color: #ed4245; }
-          .stat-card.total .stat-icon { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
-          
-          .stat-title {
-            font-size: 14px;
-            color: #888;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-          }
-          
-          .stat-number {
-            font-size: 36px;
-            font-weight: 800;
-            margin: 10px 0;
-          }
-          
-          .stat-trend {
-            font-size: 12px;
-            color: #888;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-          }
-          
-          /* Bot Status */
-          .bot-status {
-            background: linear-gradient(135deg, rgba(32, 34, 37, 0.9), rgba(47, 49, 54, 0.9));
-            border-radius: 16px;
-            padding: 25px;
-            margin-bottom: 30px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-          }
-          
-          .status-item {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-          }
-          
-          .status-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 20px;
-            background: rgba(0, 255, 234, 0.1);
-            color: #00ffea;
-          }
-          
-          .status-info {
-            flex: 1;
-          }
-          
-          .status-label {
-            font-size: 12px;
-            color: #888;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-          }
-          
-          .status-value {
-            font-size: 18px;
-            font-weight: 600;
-            margin-top: 5px;
-          }
-          
-          .status-good { color: #3ba55c; }
-          .status-bad { color: #ed4245; }
-          .status-warning { color: #f59e0b; }
-          
-          /* Tabs Navigation */
-          .tabs-container {
-            margin-bottom: 30px;
-          }
-          
-          .tabs-nav {
-            display: flex;
-            gap: 10px;
-            background: rgba(32, 34, 37, 0.8);
-            padding: 10px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-          }
-          
-          .tab-btn {
-            padding: 12px 24px;
-            background: transparent;
-            color: #888;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            position: relative;
-          }
-          
-          .tab-btn:hover {
-            color: white;
-            background: rgba(255, 255, 255, 0.1);
-          }
-          
-          .tab-btn.active {
-            background: linear-gradient(135deg, #5865f2, #4752c4);
-            color: white;
-          }
-          
-          .tab-badge {
-            background: var(--void-blood);
-            color: white;
-            font-size: 11px;
-            padding: 2px 8px;
-            border-radius: 10px;
-            margin-left: 5px;
-          }
-          
-          /* Applications Container */
-          .applications-container {
-            display: none;
-          }
-          
-          .applications-container.active {
-            display: block;
-            animation: fadeIn 0.5s ease;
-          }
-          
-          .applications-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-            gap: 20px;
-          }
-          
-          @media (max-width: 768px) {
-            .applications-grid {
-              grid-template-columns: 1fr;
-            }
-          }
-          
-          /* Application Card */
-          .application-card {
-            background: linear-gradient(135deg, rgba(32, 34, 37, 0.9), rgba(47, 49, 54, 0.9));
-            border-radius: 16px;
-            padding: 25px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-          }
-          
-          .application-card:hover {
-            transform: translateY(-5px);
-            border-color: rgba(0, 255, 234, 0.3);
-            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-          }
-          
-          .application-card.pending { border-left: 5px solid var(--discord-yellow); }
-          .application-card.accepted { border-left: 5px solid var(--discord-green); }
-          .application-card.rejected { border-left: 5px solid var(--discord-red); }
-          
-          .card-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            margin-bottom: 20px;
-          }
-          
-          .user-avatar-small {
-            width: 50px;
-            height: 50px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, #ff0033, #8b5cf6);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            font-size: 20px;
-            margin-right: 15px;
-          }
-          
-          .user-details {
-            flex: 1;
-          }
-          
-          .username {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 5px;
-          }
-          
-          .user-id {
-            font-size: 12px;
-            color: #888;
-            font-family: 'JetBrains Mono', monospace;
-          }
-          
-          .application-status {
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 11px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-          }
-          
-          .status-pending {
-            background: rgba(245, 158, 11, 0.2);
-            color: #f59e0b;
-          }
-          
-          .status-accepted {
-            background: rgba(59, 165, 92, 0.2);
-            color: #3ba55c;
-          }
-          
-          .status-rejected {
-            background: rgba(237, 66, 69, 0.2);
-            color: #ed4245;
-          }
-          
-          .application-info {
-            margin: 20px 0;
-            padding: 15px;
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-          }
-          
-          .info-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 14px;
-          }
-          
-          .info-label {
-            color: #888;
-          }
-          
-          .info-value {
-            font-weight: 600;
-          }
-          
-          .score-display {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-top: 10px;
-          }
-          
-          .score-value {
-            font-size: 24px;
-            font-weight: 800;
-            color: #00ffea;
-          }
-          
-          .score-total {
-            color: #888;
-            font-size: 14px;
-          }
-          
-          .progress-bar {
-            height: 6px;
-            background: rgba(0, 0, 0, 0.3);
-            border-radius: 3px;
-            margin-top: 10px;
-            overflow: hidden;
-          }
-          
-          .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, #00ffea, #8b5cf6);
-            border-radius: 3px;
-            transition: width 0.8s ease;
-          }
-          
-          .card-actions {
-            display: flex;
-            gap: 10px;
-            margin-top: 20px;
-          }
-          
-          .action-btn {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            transition: all 0.3s ease;
-            font-size: 14px;
-          }
-          
-          .accept-btn {
-            background: linear-gradient(135deg, #3ba55c, #2d8b4f);
-            color: white;
-          }
-          
-          .reject-btn {
-            background: linear-gradient(135deg, #ed4245, #c03939);
-            color: white;
-          }
-          
-          .action-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none !important;
-          }
-          
-          .action-btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-          }
-          
-          .action-btn.accept-btn:hover:not(:disabled) {
-            box-shadow: 0 8px 25px rgba(59, 165, 92, 0.4);
-          }
-          
-          .action-btn.reject-btn:hover:not(:disabled) {
-            box-shadow: 0 8px 25px rgba(237, 66, 69, 0.4);
-          }
-          
-          /* No Applications */
-          .no-applications {
-            text-align: center;
-            padding: 60px 20px;
-            color: #888;
-          }
-          
-          .no-applications-icon {
-            font-size: 60px;
-            margin-bottom: 20px;
-            opacity: 0.3;
-          }
-          
-          /* Success Messages */
-          .success-message {
-            background: linear-gradient(135deg, rgba(59, 165, 92, 0.2), rgba(59, 165, 92, 0.1));
-            border: 1px solid rgba(59, 165, 92, 0.3);
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 15px;
-            animation: fadeIn 0.5s ease;
-          }
-          
-          .error-message {
-            background: linear-gradient(135deg, rgba(237, 66, 69, 0.2), rgba(237, 66, 69, 0.1));
-            border: 1px solid rgba(237, 66, 69, 0.3);
-            border-radius: 10px;
-            padding: 15px;
-            margin-top: 15px;
-            animation: fadeIn 0.5s ease;
-          }
-          
-          /* Modal */
-          .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.8);
-            backdrop-filter: blur(5px);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            z-index: 1000;
-            padding: 20px;
-          }
-          
-          .modal-overlay.active {
-            display: flex;
-            animation: fadeIn 0.3s ease;
-          }
-          
-          .modal-content {
-            background: linear-gradient(135deg, rgba(32, 34, 37, 0.95), rgba(47, 49, 54, 0.95));
-            border-radius: 20px;
-            padding: 30px;
-            max-width: 500px;
-            width: 100%;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-          }
-          
-          .modal-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 20px;
-          }
-          
-          .modal-title {
-            font-size: 24px;
-            font-weight: 600;
-          }
-          
-          .modal-close {
-            background: transparent;
-            border: none;
-            color: #888;
-            font-size: 24px;
-            cursor: pointer;
-            transition: color 0.3s ease;
-          }
-          
-          .modal-close:hover {
-            color: white;
-          }
-          
-          .modal-textarea {
-            width: 100%;
-            min-height: 120px;
-            background: rgba(0, 0, 0, 0.3);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 15px;
-            color: white;
-            font-family: inherit;
-            font-size: 14px;
-            margin-bottom: 20px;
-            resize: vertical;
-          }
-          
-          .modal-textarea:focus {
-            outline: none;
-            border-color: #00ffea;
-          }
-          
-          .modal-actions {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-          }
-          
-          .modal-btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s ease;
-          }
-          
-          .modal-btn.cancel {
-            background: rgba(255, 255, 255, 0.1);
-            color: white;
-          }
-          
-          .modal-btn.confirm {
-            background: linear-gradient(135deg, #ed4245, #c03939);
-            color: white;
-          }
-          
-          .modal-btn.cancel:hover {
-            background: rgba(255, 255, 255, 0.2);
-          }
-          
-          .modal-btn.confirm:hover {
-            box-shadow: 0 8px 25px rgba(237, 66, 69, 0.4);
-          }
-          
-          /* Animations */
-          @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          
-          @keyframes pulse {
-            0% { box-shadow: 0 0 0 0 rgba(0, 255, 234, 0.4); }
-            70% { box-shadow: 0 0 0 10px rgba(0, 255, 234, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(0, 255, 234, 0); }
-          }
-          
-          .pulse {
-            animation: pulse 2s infinite;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="admin-container">
-          <!-- Header -->
-          <div class="header">
-            <div class="header-top">
-              <h1 class="header-title">
-                <i class="fas fa-shield-alt"></i> VOID ESPORTS ADMIN DASHBOARD
-              </h1>
-              <div class="header-user">
-                <div class="user-avatar">
-                  ${req.session.user.username.charAt(0).toUpperCase()}
-                </div>
-                <div class="user-info">
-                  <div class="username">${req.session.user.username}</div>
-                  <div class="user-role">ADMINISTRATOR</div>
-                </div>
-              </div>
-            </div>
-            
-            <div class="header-actions">
-              <a href="/debug/bot" class="header-btn" target="_blank">
-                <i class="fas fa-robot"></i> Bot Status
-              </a>
-              <a href="/bot-invite" class="header-btn" target="_blank">
-                <i class="fas fa-link"></i> Invite Bot
-              </a>
-              <a href="https://discord.gg/dqHF9HPucf" class="header-btn" target="_blank">
-                <i class="fab fa-discord"></i> Discord Server
-              </a>
-              <a href="/logout" class="header-btn logout-btn">
-                <i class="fas fa-sign-out-alt"></i> Logout
-              </a>
-            </div>
-          </div>
-          
-          <!-- Statistics -->
-          <div class="stats-grid">
-            <div class="stat-card total" onclick="showTab('all')">
-              <div class="stat-header">
-                <div>
-                  <div class="stat-title">Total Applications</div>
-                  <div class="stat-number">${realApplications.length}</div>
-                </div>
-                <div class="stat-icon">
-                  <i class="fas fa-layer-group"></i>
-                </div>
-              </div>
-              <div class="stat-trend">
-                <i class="fas fa-chart-line"></i> All real applications
-              </div>
-            </div>
-            
-            <div class="stat-card pending" onclick="showTab('pending')">
-              <div class="stat-header">
-                <div>
-                  <div class="stat-title">Pending Review</div>
-                  <div class="stat-number">${pendingApplications.length}</div>
-                </div>
-                <div class="stat-icon">
-                  <i class="fas fa-clock"></i>
-                </div>
-              </div>
-              <div class="stat-trend">
-                <i class="fas fa-exclamation-circle"></i> Requires attention
-              </div>
-            </div>
-            
-            <div class="stat-card accepted" onclick="showTab('accepted')">
-              <div class="stat-header">
-                <div>
-                  <div class="stat-title">Accepted</div>
-                  <div class="stat-number">${acceptedApplications.length}</div>
-                </div>
-                <div class="stat-icon">
-                  <i class="fas fa-check-circle"></i>
-                </div>
-              </div>
-              <div class="stat-trend">
-                <i class="fas fa-user-check"></i> Role assigned
-              </div>
-            </div>
-            
-            <div class="stat-card rejected" onclick="showTab('rejected')">
-              <div class="stat-header">
-                <div>
-                  <div class="stat-title">Rejected</div>
-                  <div class="stat-number">${rejectedApplications.length}</div>
-                </div>
-                <div class="stat-icon">
-                  <i class="fas fa-times-circle"></i>
-                </div>
-              </div>
-              <div class="stat-trend">
-                <i class="fas fa-user-slash"></i> DM sent
-              </div>
-            </div>
-          </div>
-          
-          <!-- Bot Status -->
-          <div class="bot-status">
-            <div class="status-item">
-              <div class="status-icon pulse">
-                <i class="fas fa-robot"></i>
-              </div>
-              <div class="status-info">
-                <div class="status-label">Bot Status</div>
-                <div class="status-value ${botReady ? 'status-good' : 'status-bad'}">
-                  ${botReady ? '✅ Connected' : '❌ Disconnected'}
-                </div>
-              </div>
-            </div>
-            
-            <div class="status-item">
-              <div class="status-icon">
-                <i class="fas fa-server"></i>
-              </div>
-              <div class="status-info">
-                <div class="status-label">Discord Server</div>
-                <div class="status-value ${process.env.DISCORD_GUILD_ID ? 'status-good' : 'status-bad'}">
-                  ${process.env.DISCORD_GUILD_ID ? '✅ Configured' : '❌ Not Set'}
-                </div>
-              </div>
-            </div>
-            
-            <div class="status-item">
-              <div class="status-icon">
-                <i class="fas fa-user-tag"></i>
-              </div>
-              <div class="status-info">
-                <div class="status-label">Mod Role</div>
-                <div class="status-value ${process.env.MOD_ROLE_ID ? 'status-good' : 'status-bad'}">
-                  ${process.env.MOD_ROLE_ID ? '✅ Configured' : '❌ Not Set'}
-                </div>
-              </div>
-            </div>
-            
-            <div class="status-item">
-              <div class="status-icon">
-                <i class="fas fa-bell"></i>
-              </div>
-              <div class="status-info">
-                <div class="status-label">Webhook</div>
-                <div class="status-value ${process.env.DISCORD_WEBHOOK_URL ? 'status-good' : 'status-warning'}">
-                  ${process.env.DISCORD_WEBHOOK_URL ? '✅ Active' : '⚠️ Not Set'}
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <!-- Tabs Navigation -->
-          <div class="tabs-container">
-            <div class="tabs-nav">
-              <button class="tab-btn active" onclick="showTab('pending')">
-                <i class="fas fa-clock"></i> Pending
-                <span class="tab-badge">${pendingApplications.length}</span>
-              </button>
-              <button class="tab-btn" onclick="showTab('accepted')">
-                <i class="fas fa-check-circle"></i> Accepted
-                <span class="tab-badge">${acceptedApplications.length}</span>
-              </button>
-              <button class="tab-btn" onclick="showTab('rejected')">
-                <i class="fas fa-times-circle"></i> Rejected
-                <span class="tab-badge">${rejectedApplications.length}</span>
-              </button>
-              <button class="tab-btn" onclick="showTab('all')">
-                <i class="fas fa-layer-group"></i> All Applications
-                <span class="tab-badge">${realApplications.length}</span>
-              </button>
-            </div>
-            
-            <!-- Pending Applications -->
-            <div id="tab-pending" class="applications-container active">
-              <div class="applications-grid">
-    `;
-    
-    // Render pending applications
-    if (pendingApplications.length === 0) {
-      html += `
-                <div class="no-applications">
-                  <div class="no-applications-icon">
-                    <i class="fas fa-inbox"></i>
-                  </div>
-                  <h3>No Pending Applications</h3>
-                  <p>All applications have been reviewed.</p>
-                </div>
-      `;
-    } else {
-      pendingApplications.forEach((app) => {
-        const score = app.score ? app.score.split('/') : ['0', '8'];
-        const scoreValue = parseInt(score[0]);
-        const totalQuestions = parseInt(score[1]);
-        const percentage = (scoreValue / totalQuestions) * 100;
-        const usernameInitial = app.discord_username ? app.discord_username.charAt(0).toUpperCase() : 'U';
-        
-        html += `
-                <div class="application-card pending" id="app-${app.id}">
-                  <div class="card-header">
-                    <div style="display: flex; align-items: flex-start;">
-                      <div class="user-avatar-small">${usernameInitial}</div>
-                      <div class="user-details">
-                        <div class="username">${escapeHtml(app.discord_username)}</div>
-                        <div class="user-id">ID: ${escapeHtml(app.discord_id)}</div>
-                      </div>
-                    </div>
-                    <div class="application-status status-pending">PENDING</div>
-                  </div>
-                  
-                  <div class="application-info">
-                    <div class="info-row">
-                      <span class="info-label">Submitted:</span>
-                      <span class="info-value">${new Date(app.created_at).toLocaleString()}</span>
-                    </div>
-                    <div class="info-row">
-                      <span class="info-label">Score:</span>
-                      <div class="score-display">
-                        <span class="score-value">${scoreValue}</span>
-                        <span class="score-total">/ ${totalQuestions}</span>
-                        <span style="color: #888; font-size: 14px;">(${Math.round(percentage)}%)</span>
-                      </div>
-                    </div>
-                    <div class="progress-bar">
-                      <div class="progress-fill" style="width: ${percentage}%"></div>
-                    </div>
-                  </div>
-                  
-                  <div class="card-actions">
-                    <button class="action-btn accept-btn" onclick="processApplication(${app.id}, 'accept', '${escapeHtml(app.discord_username)}')">
-                      <i class="fas fa-check"></i> Accept & Assign Role
-                    </button>
-                    <button class="action-btn reject-btn" onclick="showRejectModal(${app.id}, '${escapeHtml(app.discord_username)}')">
-                      <i class="fas fa-times"></i> Reject
-                    </button>
-                  </div>
-                </div>
-        `;
-      });
-    }
-    
-    html += `
-              </div>
-            </div>
-            
-            <!-- Accepted Applications -->
-            <div id="tab-accepted" class="applications-container">
-              <div class="applications-grid">
-    `;
-    
-    // Render accepted applications
-    if (acceptedApplications.length === 0) {
-      html += `
-                <div class="no-applications">
-                  <div class="no-applications-icon">
-                    <i class="fas fa-check-circle"></i>
-                  </div>
-                  <h3>No Accepted Applications</h3>
-                  <p>No applications have been accepted yet.</p>
-                </div>
-      `;
-    } else {
-      acceptedApplications.forEach((app) => {
-        const score = app.score ? app.score.split('/') : ['0', '8'];
-        const scoreValue = parseInt(score[0]);
-        const totalQuestions = parseInt(score[1]);
-        const percentage = (scoreValue / totalQuestions) * 100;
-        const usernameInitial = app.discord_username ? app.discord_username.charAt(0).toUpperCase() : 'U';
-        const reviewedDate = app.reviewed_at ? new Date(app.reviewed_at).toLocaleString() : 'Not reviewed';
-        const reviewer = app.reviewed_by || 'Unknown';
-        
-        html += `
-                <div class="application-card accepted" id="app-${app.id}">
-                  <div class="card-header">
-                    <div style="display: flex; align-items: flex-start;">
-                      <div class="user-avatar-small">${usernameInitial}</div>
-                      <div class="user-details">
-                        <div class="username">${escapeHtml(app.discord_username)}</div>
-                        <div class="user-id">ID: ${escapeHtml(app.discord_id)}</div>
-                      </div>
-                    </div>
-                    <div class="application-status status-accepted">ACCEPTED</div>
-                  </div>
-                  
-                  <div class="application-info">
-                    <div class="info-row">
-                      <span class="info-label">Reviewed by:</span>
-                      <span class="info-value">${reviewer}</span>
-                    </div>
-                    <div class="info-row">
-                      <span class="info-label">Reviewed at:</span>
-                      <span class="info-value">${reviewedDate}</span>
-                    </div>
-                    <div class="info-row">
-                      <span class="info-label">Score:</span>
-                      <div class="score-display">
-                        <span class="score-value">${scoreValue}</span>
-                        <span class="score-total">/ ${totalQuestions}</span>
-                        <span style="color: #888; font-size: 14px;">(${Math.round(percentage)}%)</span>
-                      </div>
-                    </div>
-                    <div class="progress-bar">
-                      <div class="progress-fill" style="width: ${percentage}%"></div>
-                    </div>
-                  </div>
-                  
-                  <div class="card-actions">
-                    <button class="action-btn" disabled style="background: rgba(59, 165, 92, 0.3);">
-                      <i class="fas fa-user-check"></i> Role Assigned
-                    </button>
-                  </div>
-                </div>
-        `;
-      });
-    }
-    
-    html += `
-              </div>
-            </div>
-            
-            <!-- Rejected Applications -->
-            <div id="tab-rejected" class="applications-container">
-              <div class="applications-grid">
-    `;
-    
-    // Render rejected applications
-    if (rejectedApplications.length === 0) {
-      html += `
-                <div class="no-applications">
-                  <div class="no-applications-icon">
-                    <i class="fas fa-times-circle"></i>
-                  </div>
-                  <h3>No Rejected Applications</h3>
-                  <p>No applications have been rejected yet.</p>
-                </div>
-      `;
-    } else {
-      rejectedApplications.forEach((app) => {
-        const score = app.score ? app.score.split('/') : ['0', '8'];
-        const scoreValue = parseInt(score[0]);
-        const totalQuestions = parseInt(score[1]);
-        const percentage = (scoreValue / totalQuestions) * 100;
-        const usernameInitial = app.discord_username ? app.discord_username.charAt(0).toUpperCase() : 'U';
-        const reviewedDate = app.reviewed_at ? new Date(app.reviewed_at).toLocaleString() : 'Not reviewed';
-        const reviewer = app.reviewed_by || 'Unknown';
-        const reason = app.rejection_reason || 'No reason provided';
-        
-        html += `
-                <div class="application-card rejected" id="app-${app.id}">
-                  <div class="card-header">
-                    <div style="display: flex; align-items: flex-start;">
-                      <div class="user-avatar-small">${usernameInitial}</div>
-                      <div class="user-details">
-                        <div class="username">${escapeHtml(app.discord_username)}</div>
-                        <div class="user-id">ID: ${escapeHtml(app.discord_id)}</div>
-                      </div>
-                    </div>
-                    <div class="application-status status-rejected">REJECTED</div>
-                  </div>
-                  
-                  <div class="application-info">
-                    <div class="info-row">
-                      <span class="info-label">Reviewed by:</span>
-                      <span class="info-value">${reviewer}</span>
-                    </div>
-                    <div class="info-row">
-                      <span class="info-label">Reviewed at:</span>
-                      <span class="info-value">${reviewedDate}</span>
-                    </div>
-                    <div class="info-row">
-                      <span class="info-label">Reason:</span>
-                      <span class="info-value" style="color: #ed4245; font-size: 13px;">${escapeHtml(reason.substring(0, 100))}${reason.length > 100 ? '...' : ''}</span>
-                    </div>
-                    <div class="info-row">
-                      <span class="info-label">Score:</span>
-                      <div class="score-display">
-                        <span class="score-value">${scoreValue}</span>
-                        <span class="score-total">/ ${totalQuestions}</span>
-                        <span style="color: #888; font-size: 14px;">(${Math.round(percentage)}%)</span>
-                      </div>
-                    </div>
-                    <div class="progress-bar">
-                      <div class="progress-fill" style="width: ${percentage}%"></div>
-                    </div>
-                  </div>
-                  
-                  <div class="card-actions">
-                    <button class="action-btn" disabled style="background: rgba(237, 66, 69, 0.3);">
-                      <i class="fas fa-comment-slash"></i> Rejection DM Sent
-                    </button>
-                  </div>
-                </div>
-        `;
-      });
-    }
-    
-    html += `
-              </div>
-            </div>
-            
-            <!-- All Applications -->
-            <div id="tab-all" class="applications-container">
-              <div class="applications-grid">
-    `;
-    
-    // Render all applications
-    if (realApplications.length === 0) {
-      html += `
-                <div class="no-applications">
-                  <div class="no-applications-icon">
-                    <i class="fas fa-inbox"></i>
-                  </div>
-                  <h3>No Applications</h3>
-                  <p>No applications have been submitted yet.</p>
-                </div>
-      `;
-    } else {
-      realApplications.forEach((app) => {
-        const score = app.score ? app.score.split('/') : ['0', '8'];
-        const scoreValue = parseInt(score[0]);
-        const totalQuestions = parseInt(score[1]);
-        const percentage = (scoreValue / totalQuestions) * 100;
-        const usernameInitial = app.discord_username ? app.discord_username.charAt(0).toUpperCase() : 'U';
-        const statusClass = app.status === 'pending' ? 'status-pending' : app.status === 'accepted' ? 'status-accepted' : 'status-rejected';
-        const statusText = app.status === 'pending' ? 'PENDING' : app.status === 'accepted' ? 'ACCEPTED' : 'REJECTED';
-        
-        html += `
-                <div class="application-card ${app.status}" id="app-${app.id}">
-                  <div class="card-header">
-                    <div style="display: flex; align-items: flex-start;">
-                      <div class="user-avatar-small">${usernameInitial}</div>
-                      <div class="user-details">
-                        <div class="username">${escapeHtml(app.discord_username)}</div>
-                        <div class="user-id">ID: ${escapeHtml(app.discord_id)}</div>
-                      </div>
-                    </div>
-                    <div class="application-status ${statusClass}">${statusText}</div>
-                  </div>
-                  
-                  <div class="application-info">
-                    <div class="info-row">
-                      <span class="info-label">Status:</span>
-                      <span class="info-value" style="color: ${app.status === 'pending' ? '#f59e0b' : app.status === 'accepted' ? '#3ba55c' : '#ed4245'}">
-                        ${statusText}
-                      </span>
-                    </div>
-                    <div class="info-row">
-                      <span class="info-label">Submitted:</span>
-                      <span class="info-value">${new Date(app.created_at).toLocaleString()}</span>
-                    </div>
-                    <div class="info-row">
-                      <span class="info-label">Score:</span>
-                      <div class="score-display">
-                        <span class="score-value">${scoreValue}</span>
-                        <span class="score-total">/ ${totalQuestions}</span>
-                        <span style="color: #888; font-size: 14px;">(${Math.round(percentage)}%)</span>
-                      </div>
-                    </div>
-                    <div class="progress-bar">
-                      <div class="progress-fill" style="width: ${percentage}%"></div>
-                    </div>
-                  </div>
-                  
-                  ${app.status === 'pending' ? `
-                  <div class="card-actions">
-                    <button class="action-btn accept-btn" onclick="processApplication(${app.id}, 'accept', '${escapeHtml(app.discord_username)}')">
-                      <i class="fas fa-check"></i> Accept
-                    </button>
-                    <button class="action-btn reject-btn" onclick="showRejectModal(${app.id}, '${escapeHtml(app.discord_username)}')">
-                      <i class="fas fa-times"></i> Reject
-                    </button>
-                  </div>
-                  ` : `
-                  <div class="card-actions">
-                    <button class="action-btn" disabled style="background: rgba(255, 255, 255, 0.1);">
-                      <i class="fas fa-${app.status === 'accepted' ? 'user-check' : 'comment-slash'}"></i>
-                      ${app.status === 'accepted' ? 'Role Assigned' : 'Rejection DM Sent'}
-                    </button>
-                  </div>
-                  `}
-                </div>
-        `;
-      });
-    }
-    
-    html += `
-              </div>
-            </div>
-          </div>
-        </div>
-        
-        <!-- Rejection Modal -->
-        <div class="modal-overlay" id="rejectModal">
-          <div class="modal-content">
-            <div class="modal-header">
-              <h2 class="modal-title">
-                <i class="fas fa-times-circle" style="color: #ed4245;"></i> Reject Application
-              </h2>
-              <button class="modal-close" onclick="closeRejectModal()">×</button>
-            </div>
-            <p style="margin-bottom: 20px; color: #888;">Please provide a reason for rejection. This will be sent to the user via DM.</p>
-            <textarea class="modal-textarea" id="rejectReason" placeholder="Enter rejection reason...">Insufficient test score or incomplete application</textarea>
-            <div class="modal-actions">
-              <button class="modal-btn cancel" onclick="closeRejectModal()">Cancel</button>
-              <button class="modal-btn confirm" id="confirmReject">Confirm Rejection</button>
-            </div>
-          </div>
-        </div>
-        
-        <script>
-          let currentAppId = null;
-          let currentAppUsername = '';
-          
-          // Tab navigation
-          function showTab(tabName) {
-            // Hide all tabs
-            document.querySelectorAll('.applications-container').forEach(tab => {
-              tab.classList.remove('active');
-            });
-            
-            // Remove active class from all buttons
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-              btn.classList.remove('active');
-            });
-            
-            // Show selected tab
-            document.getElementById('tab-' + tabName).classList.add('active');
-            
-            // Activate button
-            document.querySelectorAll('.tab-btn').forEach(btn => {
-              if (btn.textContent.includes(tabName.charAt(0).toUpperCase() + tabName.slice(1)) || 
-                  (tabName === 'all' && btn.textContent.includes('All'))) {
-                btn.classList.add('active');
-              }
-            });
-          }
-          
-          // Rejection modal
-          function showRejectModal(appId, username) {
-            currentAppId = appId;
-            currentAppUsername = username;
-            document.getElementById('rejectModal').classList.add('active');
-            document.getElementById('rejectReason').focus();
-          }
-          
-          function closeRejectModal() {
-            document.getElementById('rejectModal').classList.remove('active');
-            currentAppId = null;
-            currentAppUsername = '';
-          }
-          
-          // Process application
-          async function processApplication(appId, action, username = '') {
-            const appCard = document.getElementById('app-' + appId);
-            if (!appCard) return;
-            
-            const buttons = appCard.querySelectorAll('.action-btn');
-            buttons.forEach(btn => {
-              btn.disabled = true;
-              if (btn.classList.contains('accept-btn')) {
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-              } else if (btn.classList.contains('reject-btn')) {
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-              }
-            });
-            
-            try {
-              let url, options;
-              
-              if (action === 'accept') {
-                url = '/admin/accept/' + appId;
-                options = {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'include'
-                };
-              } else if (action === 'reject') {
-                const reason = document.getElementById('rejectReason').value;
-                url = '/admin/reject/' + appId;
-                options = {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  credentials: 'include',
-                  body: JSON.stringify({ reason: reason })
-                };
-                closeRejectModal();
-              }
-              
-              const response = await fetch(url, options);
-              const result = await response.json();
-              
-              console.log('Action result:', result);
-              
-              if (response.ok) {
-                // Remove success/error messages if they exist
-                const existingMessage = appCard.querySelector('.success-message, .error-message');
-                if (existingMessage) existingMessage.remove();
-                
-                // Create success message
-                const messageDiv = document.createElement('div');
-                messageDiv.className = result.success ? 'success-message' : 'error-message';
-                
-                if (action === 'accept') {
-                  if (result.success) {
-                    messageDiv.innerHTML = \`
-                      <div style="display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-check-circle" style="color: #3ba55c; font-size: 20px;"></i>
-                        <div>
-                          <strong style="color: #3ba55c;">✓ Application Accepted!</strong><br>
-                          <small>Role assigned: \${result.roleAssigned ? '✅' : '❌'} | DM sent: \${result.dmSent ? '✅' : '❌'}</small>
-                        </div>
-                      </div>
-                    \`;
-                  } else {
-                    messageDiv.innerHTML = \`
-                      <div style="display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-exclamation-triangle" style="color: #ed4245; font-size: 20px;"></i>
-                        <div>
-                          <strong style="color: #ed4245;">✗ Failed to accept</strong><br>
-                          <small>\${result.error || 'Unknown error'}</small>
-                        </div>
-                      </div>
-                    \`;
-                    
-                    // Re-enable buttons on error
-                    setTimeout(() => {
-                      buttons.forEach(btn => {
-                        btn.disabled = false;
-                        if (btn.classList.contains('accept-btn')) {
-                          btn.innerHTML = '<i class="fas fa-check"></i> Accept & Assign Role';
-                        } else if (btn.classList.contains('reject-btn')) {
-                          btn.innerHTML = '<i class="fas fa-times"></i> Reject';
-                        }
-                      });
-                    }, 3000);
-                  }
-                } else if (action === 'reject') {
-                  if (result.success) {
-                    messageDiv.innerHTML = \`
-                      <div style="display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-check-circle" style="color: #3ba55c; font-size: 20px;"></i>
-                        <div>
-                          <strong style="color: #3ba55c;">✓ Application Rejected!</strong><br>
-                          <small>Rejection DM sent: \${result.dmSent ? '✅' : '❌'}</small>
-                        </div>
-                      </div>
-                    \`;
-                  } else {
-                    messageDiv.innerHTML = \`
-                      <div style="display: flex; align-items: center; gap: 10px;">
-                        <i class="fas fa-exclamation-triangle" style="color: #ed4245; font-size: 20px;"></i>
-                        <div>
-                          <strong style="color: #ed4245;">✗ Failed to reject</strong><br>
-                          <small>\${result.error || 'Unknown error'}</small>
-                        </div>
-                      </div>
-                    \`;
-                  }
-                }
-                
-                appCard.appendChild(messageDiv);
-                
-                // If success, remove card from DOM and refresh tab counts after delay
-                if (result.success) {
-                  setTimeout(() => {
-                    appCard.remove();
-                    // Refresh the page to update counts and tabs
-                    location.reload();
-                  }, 2000);
-                }
-                
-              } else {
-                throw new Error(result.message || 'Failed to process application');
-              }
-              
-            } catch (error) {
-              console.error('Action failed:', error);
-              
-              const existingMessage = appCard.querySelector('.success-message, .error-message');
-              if (existingMessage) existingMessage.remove();
-              
-              const errorDiv = document.createElement('div');
-              errorDiv.className = 'error-message';
-              errorDiv.innerHTML = \`
-                <div style="display: flex; align-items: center; gap: 10px;">
-                  <i class="fas fa-exclamation-triangle" style="color: #ed4245; font-size: 20px;"></i>
-                  <div>
-                    <strong style="color: #ed4245;">✗ Error</strong><br>
-                    <small>\${error.message}</small>
-                  </div>
-                </div>
-              \`;
-              
-              appCard.appendChild(errorDiv);
-              
-              // Re-enable buttons on error
-              setTimeout(() => {
-                buttons.forEach(btn => {
-                  btn.disabled = false;
-                  if (btn.classList.contains('accept-btn')) {
-                    btn.innerHTML = '<i class="fas fa-check"></i> Accept & Assign Role';
-                  } else if (btn.classList.contains('reject-btn')) {
-                    btn.innerHTML = '<i class="fas fa-times"></i> Reject';
-                  }
-                });
-              }, 3000);
-            }
-          }
-          
-          // Confirm rejection
-          document.getElementById('confirmReject').addEventListener('click', function() {
-            if (currentAppId) {
-              processApplication(currentAppId, 'reject', currentAppUsername);
-            }
-          });
-          
-          // Close modal on escape key
-          document.addEventListener('keydown', function(e) {
-            if (e.key === 'Escape') {
-              closeRejectModal();
-            }
-          });
-          
-          // Auto-refresh bot status every 30 seconds
-          setInterval(() => {
-            fetch('/debug/bot').then(r => r.json()).then(data => {
-              const botStatus = document.querySelector('.status-value');
-              if (botStatus) {
-                if (data.isReady) {
-                  botStatus.textContent = '✅ Connected';
-                  botStatus.className = 'status-value status-good';
-                } else {
-                  botStatus.textContent = '❌ Disconnected';
-                  botStatus.className = 'status-value status-bad';
-                }
-              }
-            });
-          }, 30000);
-        </script>
-      </body>
-      </html>
-    `;
-
-    res.send(html);
-  } catch (err) {
-    console.error("Admin error:", err);
-    res.status(500).send(`
-      <!DOCTYPE html>
-      <html>
-      <head><title>Server Error</title></head>
-      <body>
-        <h1>Server Error</h1>
-        <p>${err.message}</p>
-        <p><a href="/admin">Try Again</a></p>
-      </body>
-      </html>
-    `);
-  }
-});
-
-/* ================= ADMIN GET APPLICATION ENDPOINT ================= */
-
-app.get("/admin/application/:id", async (req, res) => {
-  try {
-    // Check if admin is authenticated
+    // Check if user is logged in and admin
     if (!req.session.user || !req.session.isAdmin) {
-      return res.status(401).json({ error: "Unauthorized" });
+        console.log("User is NOT an admin");
+        return res.send(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Access Denied</title>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+                <style>
+                    body { 
+                        font-family: Arial, sans-serif; 
+                        text-align: center; 
+                        padding: 50px; 
+                        background: linear-gradient(135deg, #0f0f23 0%, #1a1a2e 50%, #16213e 100%);
+                        color: white;
+                        margin: 0;
+                    }
+                    h1 { color: #ff0033; }
+                    .user-info {
+                        background: rgba(32, 34, 37, 0.8);
+                        padding: 20px;
+                        border-radius: 10px;
+                        margin: 30px auto;
+                        max-width: 600px;
+                        text-align: left;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+                    .action-buttons {
+                        margin-top: 30px;
+                    }
+                    .action-btn {
+                        display: inline-block;
+                        margin: 10px;
+                        padding: 12px 24px;
+                        background: linear-gradient(135deg, #5865f2, #4752c4);
+                        color: white;
+                        text-decoration: none;
+                        border-radius: 6px;
+                        font-weight: bold;
+                        transition: all 0.3s ease;
+                    }
+                    .action-btn:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+                    }
+                </style>
+            </head>
+            <body>
+                <h1><i class="fas fa-ban"></i> Access Denied</h1>
+                <p>You don't have administrator privileges.</p>
+                
+                <div class="action-buttons">
+                    <a href="/logout" class="action-btn">
+                        <i class="fas fa-sign-out-alt"></i> Logout
+                    </a>
+                    <a href="https://hunterahead71-hash.github.io/void.training/" class="action-btn">
+                        <i class="fas fa-home"></i> Return to Training
+                    </a>
+                    <a href="/auth/discord" class="action-btn">
+                        <i class="fas fa-vial"></i> Take Mod Test
+                    </a>
+                </div>
+            </body>
+            </html>
+        `);
     }
+
+    console.log("User is admin, loading applications...");
     
-    const { data: application, error } = await supabase
-      .from("applications")
-      .select("*")
-      .eq("id", req.params.id)
-      .single();
-    
-    if (error || !application) {
-      return res.status(404).json({ error: "Application not found" });
+    try {
+        // Get applications from database
+        const { data: applications, error } = await supabase
+            .from("applications")
+            .select("*")
+            .order("created_at", { ascending: false });
+
+        if (error) {
+            console.error("Supabase error:", error);
+            return res.status(500).send(`
+                <!DOCTYPE html>
+                <html>
+                <head><title>Database Error</title></head>
+                <body>
+                    <h1>Database Error</h1>
+                    <p>Could not load applications.</p>
+                    <p><a href="/admin">Try Again</a></p>
+                </body>
+                </html>
+            `);
+        }
+
+        console.log(`Found ${applications.length} total applications in database`);
+        
+        // Filter out test users
+        const realApplications = applications.filter(app => {
+            const username = app.discord_username.toLowerCase();
+            const id = app.discord_id;
+            
+            // Skip obvious test users
+            const isTestUser = 
+                username.includes('test') || 
+                username.includes('bot') ||
+                id.includes('test') ||
+                id === '0000' ||
+                username === 'user' ||
+                username.includes('example') ||
+                id.length < 5 ||
+                username.startsWith('test_') ||
+                id.startsWith('test_') ||
+                username.includes('demo') ||
+                id === '123456789' ||
+                username.includes('fake') ||
+                username.includes('dummy');
+            
+            return !isTestUser;
+        });
+
+        console.log(`Filtered to ${realApplications.length} real applications`);
+        
+        // Calculate statistics
+        const pendingApplications = realApplications.filter(app => app.status === 'pending');
+        const acceptedApplications = realApplications.filter(app => app.status === 'accepted');
+        const rejectedApplications = realApplications.filter(app => app.status === 'rejected');
+        
+        // Advanced admin dashboard HTML
+        let html = `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Void Esports - Advanced Admin Dashboard</title>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+                <style>
+                    :root {
+                        --void-abyss: #000010;
+                        --void-blood: #ff0033;
+                        --void-neon: #00ffea;
+                        --void-purple: #8b5cf6;
+                        --discord-bg: #36393f;
+                        --discord-primary: #202225;
+                        --discord-secondary: #2f3136;
+                        --discord-tertiary: #40444b;
+                        --discord-green: #3ba55c;
+                        --discord-red: #ed4245;
+                        --discord-yellow: #f59e0b;
+                    }
+                    
+                    * {
+                        margin: 0;
+                        padding: 0;
+                        box-sizing: border-box;
+                    }
+                    
+                    body {
+                        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+                        background: linear-gradient(135deg, var(--void-abyss) 0%, #0a0a1a 50%, #1a002a 100%);
+                        color: #ffffff;
+                        min-height: 100vh;
+                        -webkit-font-smoothing: antialiased;
+                        -moz-osx-font-smoothing: grayscale;
+                    }
+                    
+                    .admin-container {
+                        max-width: 1600px;
+                        margin: 0 auto;
+                        padding: 20px;
+                    }
+                    
+                    /* Header */
+                    .header {
+                        background: linear-gradient(135deg, rgba(255, 0, 51, 0.1), rgba(0, 255, 234, 0.05));
+                        border: 1px solid rgba(255, 0, 51, 0.2);
+                        border-radius: 20px;
+                        padding: 30px;
+                        margin-bottom: 30px;
+                        backdrop-filter: blur(10px);
+                        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+                    }
+                    
+                    .header-top {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 30px;
+                    }
+                    
+                    .header-title {
+                        font-size: 32px;
+                        font-weight: 800;
+                        background: linear-gradient(135deg, #ff0033, #00ffea);
+                        -webkit-background-clip: text;
+                        -webkit-text-fill-color: transparent;
+                        background-clip: text;
+                        text-shadow: 0 0 30px rgba(255, 0, 51, 0.3);
+                    }
+                    
+                    .header-user {
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
+                        background: rgba(32, 34, 37, 0.8);
+                        padding: 12px 20px;
+                        border-radius: 12px;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+                    
+                    .user-avatar {
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 50%;
+                        background: linear-gradient(135deg, #ff0033, #8b5cf6);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-weight: bold;
+                        font-size: 18px;
+                    }
+                    
+                    .user-info {
+                        display: flex;
+                        flex-direction: column;
+                    }
+                    
+                    .username {
+                        font-weight: 600;
+                        font-size: 16px;
+                    }
+                    
+                    .user-role {
+                        font-size: 12px;
+                        color: #00ffea;
+                        background: rgba(0, 255, 234, 0.1);
+                        padding: 2px 8px;
+                        border-radius: 10px;
+                        display: inline-block;
+                        margin-top: 2px;
+                    }
+                    
+                    .header-actions {
+                        display: flex;
+                        gap: 12px;
+                    }
+                    
+                    .header-btn {
+                        padding: 10px 20px;
+                        background: linear-gradient(135deg, #5865f2, #4752c4);
+                        color: white;
+                        border: none;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        transition: all 0.3s ease;
+                        text-decoration: none;
+                        font-size: 14px;
+                    }
+                    
+                    .header-btn:hover {
+                        transform: translateY(-2px);
+                        box-shadow: 0 8px 25px rgba(88, 101, 242, 0.4);
+                    }
+                    
+                    .logout-btn {
+                        background: linear-gradient(135deg, #ed4245, #c03939);
+                    }
+                    
+                    /* Stats Grid */
+                    .stats-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                        gap: 20px;
+                        margin-bottom: 30px;
+                    }
+                    
+                    .stat-card {
+                        background: linear-gradient(135deg, rgba(32, 34, 37, 0.9), rgba(47, 49, 54, 0.9));
+                        border-radius: 16px;
+                        padding: 25px;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        backdrop-filter: blur(10px);
+                        transition: all 0.3s ease;
+                        cursor: pointer;
+                    }
+                    
+                    .stat-card:hover {
+                        transform: translateY(-5px);
+                        border-color: rgba(0, 255, 234, 0.3);
+                        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+                    }
+                    
+                    .stat-card.pending { border-left: 5px solid var(--discord-yellow); }
+                    .stat-card.accepted { border-left: 5px solid var(--discord-green); }
+                    .stat-card.rejected { border-left: 5px solid var(--discord-red); }
+                    .stat-card.total { border-left: 5px solid var(--void-purple); }
+                    
+                    .stat-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 15px;
+                    }
+                    
+                    .stat-icon {
+                        width: 50px;
+                        height: 50px;
+                        border-radius: 12px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-size: 24px;
+                    }
+                    
+                    .stat-card.pending .stat-icon { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+                    .stat-card.accepted .stat-icon { background: rgba(59, 165, 92, 0.2); color: #3ba55c; }
+                    .stat-card.rejected .stat-icon { background: rgba(237, 66, 69, 0.2); color: #ed4245; }
+                    .stat-card.total .stat-icon { background: rgba(139, 92, 246, 0.2); color: #8b5cf6; }
+                    
+                    .stat-title {
+                        font-size: 14px;
+                        color: #888;
+                        font-weight: 600;
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
+                    }
+                    
+                    .stat-number {
+                        font-size: 36px;
+                        font-weight: 800;
+                        margin: 10px 0;
+                    }
+                    
+                    .stat-trend {
+                        font-size: 12px;
+                        color: #888;
+                        display: flex;
+                        align-items: center;
+                        gap: 5px;
+                    }
+                    
+                    /* Tabs Navigation */
+                    .tabs-container {
+                        margin-bottom: 30px;
+                    }
+                    
+                    .tabs-nav {
+                        display: flex;
+                        gap: 10px;
+                        background: rgba(32, 34, 37, 0.8);
+                        padding: 10px;
+                        border-radius: 12px;
+                        margin-bottom: 20px;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+                    
+                    .tab-btn {
+                        padding: 12px 24px;
+                        background: transparent;
+                        color: #888;
+                        border: none;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                        display: flex;
+                        align-items: center;
+                        gap: 8px;
+                        position: relative;
+                    }
+                    
+                    .tab-btn:hover {
+                        color: white;
+                        background: rgba(255, 255, 255, 0.1);
+                    }
+                    
+                    .tab-btn.active {
+                        background: linear-gradient(135deg, #5865f2, #4752c4);
+                        color: white;
+                    }
+                    
+                    .tab-badge {
+                        background: var(--void-blood);
+                        color: white;
+                        font-size: 11px;
+                        padding: 2px 8px;
+                        border-radius: 10px;
+                        margin-left: 5px;
+                    }
+                    
+                    /* Applications Container */
+                    .applications-container {
+                        display: none;
+                    }
+                    
+                    .applications-container.active {
+                        display: block;
+                        animation: fadeIn 0.5s ease;
+                    }
+                    
+                    .applications-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+                        gap: 20px;
+                    }
+                    
+                    @media (max-width: 768px) {
+                        .applications-grid {
+                            grid-template-columns: 1fr;
+                        }
+                    }
+                    
+                    /* Application Card */
+                    .application-card {
+                        background: linear-gradient(135deg, rgba(32, 34, 37, 0.9), rgba(47, 49, 54, 0.9));
+                        border-radius: 16px;
+                        padding: 25px;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        transition: all 0.3s ease;
+                        position: relative;
+                        overflow: hidden;
+                    }
+                    
+                    .application-card:hover {
+                        transform: translateY(-5px);
+                        border-color: rgba(0, 255, 234, 0.3);
+                        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
+                    }
+                    
+                    .application-card.pending { border-left: 5px solid var(--discord-yellow); }
+                    .application-card.accepted { border-left: 5px solid var(--discord-green); }
+                    .application-card.rejected { border-left: 5px solid var(--discord-red); }
+                    
+                    .card-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: flex-start;
+                        margin-bottom: 20px;
+                    }
+                    
+                    .user-avatar-small {
+                        width: 50px;
+                        height: 50px;
+                        border-radius: 50%;
+                        background: linear-gradient(135deg, #ff0033, #8b5cf6);
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        font-weight: bold;
+                        font-size: 20px;
+                        margin-right: 15px;
+                    }
+                    
+                    .user-details {
+                        flex: 1;
+                    }
+                    
+                    .username {
+                        font-size: 18px;
+                        font-weight: 600;
+                        margin-bottom: 5px;
+                    }
+                    
+                    .user-id {
+                        font-size: 12px;
+                        color: #888;
+                        font-family: 'JetBrains Mono', monospace;
+                    }
+                    
+                    .application-status {
+                        padding: 6px 12px;
+                        border-radius: 20px;
+                        font-size: 11px;
+                        font-weight: 700;
+                        text-transform: uppercase;
+                        letter-spacing: 1px;
+                    }
+                    
+                    .status-pending {
+                        background: rgba(245, 158, 11, 0.2);
+                        color: #f59e0b;
+                    }
+                    
+                    .status-accepted {
+                        background: rgba(59, 165, 92, 0.2);
+                        color: #3ba55c;
+                    }
+                    
+                    .status-rejected {
+                        background: rgba(237, 66, 69, 0.2);
+                        color: #ed4245;
+                    }
+                    
+                    .application-info {
+                        margin: 20px 0;
+                        padding: 15px;
+                        background: rgba(0, 0, 0, 0.2);
+                        border-radius: 10px;
+                        border: 1px solid rgba(255, 255, 255, 0.05);
+                    }
+                    
+                    .info-row {
+                        display: flex;
+                        justify-content: space-between;
+                        margin-bottom: 8px;
+                        font-size: 14px;
+                    }
+                    
+                    .info-label {
+                        color: #888;
+                    }
+                    
+                    .info-value {
+                        font-weight: 600;
+                    }
+                    
+                    .score-display {
+                        display: flex;
+                        align-items: center;
+                        gap: 10px;
+                        margin-top: 10px;
+                    }
+                    
+                    .score-value {
+                        font-size: 24px;
+                        font-weight: 800;
+                        color: #00ffea;
+                    }
+                    
+                    .score-total {
+                        color: #888;
+                        font-size: 14px;
+                    }
+                    
+                    .progress-bar {
+                        height: 6px;
+                        background: rgba(0, 0, 0, 0.3);
+                        border-radius: 3px;
+                        margin-top: 10px;
+                        overflow: hidden;
+                    }
+                    
+                    .progress-fill {
+                        height: 100%;
+                        background: linear-gradient(90deg, #00ffea, #8b5cf6);
+                        border-radius: 3px;
+                        transition: width 0.8s ease;
+                    }
+                    
+                    .card-actions {
+                        display: flex;
+                        gap: 10px;
+                        margin-top: 20px;
+                    }
+                    
+                    .action-btn {
+                        flex: 1;
+                        padding: 12px;
+                        border: none;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        gap: 8px;
+                        transition: all 0.3s ease;
+                        font-size: 14px;
+                    }
+                    
+                    .accept-btn {
+                        background: linear-gradient(135deg, #3ba55c, #2d8b4f);
+                        color: white;
+                    }
+                    
+                    .reject-btn {
+                        background: linear-gradient(135deg, #ed4245, #c03939);
+                        color: white;
+                    }
+                    
+                    .action-btn:disabled {
+                        opacity: 0.5;
+                        cursor: not-allowed;
+                        transform: none !important;
+                    }
+                    
+                    .action-btn:hover:not(:disabled) {
+                        transform: translateY(-2px);
+                        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+                    }
+                    
+                    .action-btn.accept-btn:hover:not(:disabled) {
+                        box-shadow: 0 8px 25px rgba(59, 165, 92, 0.4);
+                    }
+                    
+                    .action-btn.reject-btn:hover:not(:disabled) {
+                        box-shadow: 0 8px 25px rgba(237, 66, 69, 0.4);
+                    }
+                    
+                    /* Conversation Log */
+                    .conversation-log {
+                        background: rgba(0, 0, 0, 0.3);
+                        border-radius: 8px;
+                        padding: 15px;
+                        margin-top: 15px;
+                        max-height: 200px;
+                        overflow-y: auto;
+                        font-family: 'JetBrains Mono', monospace;
+                        font-size: 11px;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                    }
+                    
+                    .conversation-log-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 10px;
+                        font-size: 12px;
+                        font-weight: 600;
+                    }
+                    
+                    .conversation-entry {
+                        margin-bottom: 5px;
+                        padding: 5px;
+                        border-radius: 3px;
+                        background: rgba(255, 255, 255, 0.05);
+                    }
+                    
+                    .conversation-entry.bot {
+                        background: rgba(88, 101, 242, 0.1);
+                    }
+                    
+                    .conversation-entry.user {
+                        background: rgba(114, 137, 218, 0.1);
+                    }
+                    
+                    .conversation-sender {
+                        font-weight: bold;
+                        color: #00ffea;
+                        margin-right: 5px;
+                    }
+                    
+                    .conversation-time {
+                        color: #888;
+                        font-size: 10px;
+                        margin-left: 5px;
+                    }
+                    
+                    /* No Applications */
+                    .no-applications {
+                        text-align: center;
+                        padding: 60px 20px;
+                        color: #888;
+                    }
+                    
+                    .no-applications-icon {
+                        font-size: 60px;
+                        margin-bottom: 20px;
+                        opacity: 0.3;
+                    }
+                    
+                    /* Success Messages */
+                    .success-message {
+                        background: linear-gradient(135deg, rgba(59, 165, 92, 0.2), rgba(59, 165, 92, 0.1));
+                        border: 1px solid rgba(59, 165, 92, 0.3);
+                        border-radius: 10px;
+                        padding: 15px;
+                        margin-top: 15px;
+                        animation: fadeIn 0.5s ease;
+                    }
+                    
+                    .error-message {
+                        background: linear-gradient(135deg, rgba(237, 66, 69, 0.2), rgba(237, 66, 69, 0.1));
+                        border: 1px solid rgba(237, 66, 69, 0.3);
+                        border-radius: 10px;
+                        padding: 15px;
+                        margin-top: 15px;
+                        animation: fadeIn 0.5s ease;
+                    }
+                    
+                    /* Modal */
+                    .modal-overlay {
+                        position: fixed;
+                        top: 0;
+                        left: 0;
+                        right: 0;
+                        bottom: 0;
+                        background: rgba(0, 0, 0, 0.8);
+                        backdrop-filter: blur(5px);
+                        display: none;
+                        align-items: center;
+                        justify-content: center;
+                        z-index: 1000;
+                        padding: 20px;
+                    }
+                    
+                    .modal-overlay.active {
+                        display: flex;
+                        animation: fadeIn 0.3s ease;
+                    }
+                    
+                    .modal-content {
+                        background: linear-gradient(135deg, rgba(32, 34, 37, 0.95), rgba(47, 49, 54, 0.95));
+                        border-radius: 20px;
+                        padding: 30px;
+                        max-width: 500px;
+                        width: 100%;
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+                    }
+                    
+                    .modal-header {
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        margin-bottom: 20px;
+                    }
+                    
+                    .modal-title {
+                        font-size: 24px;
+                        font-weight: 600;
+                    }
+                    
+                    .modal-close {
+                        background: transparent;
+                        border: none;
+                        color: #888;
+                        font-size: 24px;
+                        cursor: pointer;
+                        transition: color 0.3s ease;
+                    }
+                    
+                    .modal-close:hover {
+                        color: white;
+                    }
+                    
+                    .modal-textarea {
+                        width: 100%;
+                        min-height: 120px;
+                        background: rgba(0, 0, 0, 0.3);
+                        border: 1px solid rgba(255, 255, 255, 0.1);
+                        border-radius: 8px;
+                        padding: 15px;
+                        color: white;
+                        font-family: inherit;
+                        font-size: 14px;
+                        margin-bottom: 20px;
+                        resize: vertical;
+                    }
+                    
+                    .modal-textarea:focus {
+                        outline: none;
+                        border-color: #00ffea;
+                    }
+                    
+                    .modal-actions {
+                        display: flex;
+                        gap: 10px;
+                        justify-content: flex-end;
+                    }
+                    
+                    .modal-btn {
+                        padding: 12px 24px;
+                        border: none;
+                        border-radius: 8px;
+                        font-weight: 600;
+                        cursor: pointer;
+                        transition: all 0.3s ease;
+                    }
+                    
+                    .modal-btn.cancel {
+                        background: rgba(255, 255, 255, 0.1);
+                        color: white;
+                    }
+                    
+                    .modal-btn.confirm {
+                        background: linear-gradient(135deg, #ed4245, #c03939);
+                        color: white;
+                    }
+                    
+                    .modal-btn.cancel:hover {
+                        background: rgba(255, 255, 255, 0.2);
+                    }
+                    
+                    .modal-btn.confirm:hover {
+                        box-shadow: 0 8px 25px rgba(237, 66, 69, 0.4);
+                    }
+                    
+                    /* Animations */
+                    @keyframes fadeIn {
+                        from { opacity: 0; transform: translateY(10px); }
+                        to { opacity: 1; transform: translateY(0); }
+                    }
+                    
+                    @keyframes pulse {
+                        0% { box-shadow: 0 0 0 0 rgba(0, 255, 234, 0.4); }
+                        70% { box-shadow: 0 0 0 10px rgba(0, 255, 234, 0); }
+                        100% { box-shadow: 0 0 0 0 rgba(0, 255, 234, 0); }
+                    }
+                    
+                    .pulse {
+                        animation: pulse 2s infinite;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="admin-container">
+                    <!-- Header -->
+                    <div class="header">
+                        <div class="header-top">
+                            <h1 class="header-title">
+                                <i class="fas fa-shield-alt"></i> VOID ESPORTS ADMIN DASHBOARD
+                            </h1>
+                            <div class="header-user">
+                                <div class="user-avatar">
+                                    ${req.session.user.username.charAt(0).toUpperCase()}
+                                </div>
+                                <div class="user-info">
+                                    <div class="username">${req.session.user.username}</div>
+                                    <div class="user-role">ADMINISTRATOR</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="header-actions">
+                            <a href="/debug/bot" class="header-btn" target="_blank">
+                                <i class="fas fa-robot"></i> Bot Status
+                            </a>
+                            <a href="/bot-invite" class="header-btn" target="_blank">
+                                <i class="fas fa-link"></i> Invite Bot
+                            </a>
+                            <a href="https://discord.gg/dqHF9HPucf" class="header-btn" target="_blank">
+                                <i class="fab fa-discord"></i> Discord Server
+                            </a>
+                            <a href="/logout" class="header-btn logout-btn">
+                                <i class="fas fa-sign-out-alt"></i> Logout
+                            </a>
+                        </div>
+                    </div>
+                    
+                    <!-- Statistics -->
+                    <div class="stats-grid">
+                        <div class="stat-card total" onclick="showTab('all')">
+                            <div class="stat-header">
+                                <div>
+                                    <div class="stat-title">Total Applications</div>
+                                    <div class="stat-number">${realApplications.length}</div>
+                                </div>
+                                <div class="stat-icon">
+                                    <i class="fas fa-layer-group"></i>
+                                </div>
+                            </div>
+                            <div class="stat-trend">
+                                <i class="fas fa-chart-line"></i> All real applications
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card pending" onclick="showTab('pending')">
+                            <div class="stat-header">
+                                <div>
+                                    <div class="stat-title">Pending Review</div>
+                                    <div class="stat-number">${pendingApplications.length}</div>
+                                </div>
+                                <div class="stat-icon">
+                                    <i class="fas fa-clock"></i>
+                                </div>
+                            </div>
+                            <div class="stat-trend">
+                                <i class="fas fa-exclamation-circle"></i> Requires attention
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card accepted" onclick="showTab('accepted')">
+                            <div class="stat-header">
+                                <div>
+                                    <div class="stat-title">Accepted</div>
+                                    <div class="stat-number">${acceptedApplications.length}</div>
+                                </div>
+                                <div class="stat-icon">
+                                    <i class="fas fa-check-circle"></i>
+                                </div>
+                            </div>
+                            <div class="stat-trend">
+                                <i class="fas fa-user-check"></i> Role assigned
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card rejected" onclick="showTab('rejected')">
+                            <div class="stat-header">
+                                <div>
+                                    <div class="stat-title">Rejected</div>
+                                    <div class="stat-number">${rejectedApplications.length}</div>
+                                </div>
+                                <div class="stat-icon">
+                                    <i class="fas fa-times-circle"></i>
+                                </div>
+                            </div>
+                            <div class="stat-trend">
+                                <i class="fas fa-user-slash"></i> DM sent
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Tabs Navigation -->
+                    <div class="tabs-container">
+                        <div class="tabs-nav">
+                            <button class="tab-btn active" onclick="showTab('pending')">
+                                <i class="fas fa-clock"></i> Pending
+                                <span class="tab-badge">${pendingApplications.length}</span>
+                            </button>
+                            <button class="tab-btn" onclick="showTab('accepted')">
+                                <i class="fas fa-check-circle"></i> Accepted
+                                <span class="tab-badge">${acceptedApplications.length}</span>
+                            </button>
+                            <button class="tab-btn" onclick="showTab('rejected')">
+                                <i class="fas fa-times-circle"></i> Rejected
+                                <span class="tab-badge">${rejectedApplications.length}</span>
+                            </button>
+                            <button class="tab-btn" onclick="showTab('all')">
+                                <i class="fas fa-layer-group"></i> All Applications
+                                <span class="tab-badge">${realApplications.length}</span>
+                            </button>
+                        </div>
+                        
+                        <!-- Pending Applications -->
+                        <div id="tab-pending" class="applications-container active">
+                            <div class="applications-grid">
+        `;
+        
+        // Render pending applications
+        if (pendingApplications.length === 0) {
+            html += `
+                                <div class="no-applications">
+                                    <div class="no-applications-icon">
+                                        <i class="fas fa-inbox"></i>
+                                    </div>
+                                    <h3>No Pending Applications</h3>
+                                    <p>All applications have been reviewed.</p>
+                                </div>
+            `;
+        } else {
+            pendingApplications.forEach((app) => {
+                const score = app.score ? app.score.split('/') : ['0', '8'];
+                const scoreValue = parseInt(score[0]);
+                const totalQuestions = parseInt(score[1]);
+                const percentage = (scoreValue / totalQuestions) * 100;
+                const usernameInitial = app.discord_username ? app.discord_username.charAt(0).toUpperCase() : 'U';
+                
+                // Parse conversation log if available
+                let conversationLogHTML = '';
+                if (app.conversation_log) {
+                    const conversationLog = app.conversation_log;
+                    const lines = conversationLog.split('\n').slice(0, 10); // Show first 10 lines
+                    conversationLogHTML = `
+                        <div class="conversation-log-header">
+                            <span>Conversation Log</span>
+                            <button onclick="viewFullConversation(${app.id})" style="background: none; border: none; color: #00ffea; cursor: pointer; font-size: 11px;">
+                                <i class="fas fa-expand"></i> View Full
+                            </button>
+                        </div>
+                        <div class="conversation-log">
+                    `;
+                    
+                    lines.forEach(line => {
+                        if (line.trim()) {
+                            const timeMatch = line.match(/\[(\d{2}:\d{2}:\d{2})\]/);
+                            const time = timeMatch ? timeMatch[1] : '';
+                            const content = line.replace(/\[\d{2}:\d{2}:\d{2}\]/, '').trim();
+                            
+                            let sender = 'SYSTEM';
+                            let cssClass = '';
+                            
+                            if (content.includes('VOID BOT:')) {
+                                sender = 'BOT';
+                                cssClass = 'bot';
+                            } else if (content.includes('MODERATOR (You):') || content.includes('You:')) {
+                                sender = 'YOU';
+                                cssClass = 'user';
+                            } else if (content.includes('USER (') && content.includes('):')) {
+                                const userMatch = content.match(/USER \((.+?)\):/);
+                                sender = userMatch ? userMatch[1] : 'USER';
+                            }
+                            
+                            const message = content.replace(/^(VOID BOT:|MODERATOR \(You\):|You:|USER \([^)]+\):|SYSTEM:)/, '').trim();
+                            
+                            conversationLogHTML += `
+                                <div class="conversation-entry ${cssClass}">
+                                    <span class="conversation-sender">${sender}:</span>
+                                    ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}
+                                    <span class="conversation-time">${time}</span>
+                                </div>
+                            `;
+                        }
+                    });
+                    
+                    conversationLogHTML += `</div>`;
+                }
+                
+                html += `
+                                <div class="application-card pending" id="app-${app.id}" data-status="pending">
+                                    <div class="card-header">
+                                        <div style="display: flex; align-items: flex-start;">
+                                            <div class="user-avatar-small">${usernameInitial}</div>
+                                            <div class="user-details">
+                                                <div class="username">${escapeHtml(app.discord_username)}</div>
+                                                <div class="user-id">ID: ${escapeHtml(app.discord_id)}</div>
+                                            </div>
+                                        </div>
+                                        <div class="application-status status-pending">PENDING</div>
+                                    </div>
+                                    
+                                    <div class="application-info">
+                                        <div class="info-row">
+                                            <span class="info-label">Submitted:</span>
+                                            <span class="info-value">${new Date(app.created_at).toLocaleString()}</span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="info-label">Score:</span>
+                                            <div class="score-display">
+                                                <span class="score-value">${scoreValue}</span>
+                                                <span class="score-total">/ ${totalQuestions}</span>
+                                                <span style="color: #888; font-size: 14px;">(${Math.round(percentage)}%)</span>
+                                            </div>
+                                        </div>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: ${percentage}%"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    ${conversationLogHTML}
+                                    
+                                    <div class="card-actions">
+                                        <button class="action-btn accept-btn" onclick="processApplication(${app.id}, 'accept', '${escapeHtml(app.discord_username)}')">
+                                            <i class="fas fa-check"></i> Accept & Assign Role
+                                        </button>
+                                        <button class="action-btn reject-btn" onclick="showRejectModal(${app.id}, '${escapeHtml(app.discord_username)}')">
+                                            <i class="fas fa-times"></i> Reject
+                                        </button>
+                                    </div>
+                                </div>
+                `;
+            });
+        }
+        
+        html += `
+                            </div>
+                        </div>
+                        
+                        <!-- Accepted Applications -->
+                        <div id="tab-accepted" class="applications-container">
+                            <div class="applications-grid">
+        `;
+        
+        // Render accepted applications
+        if (acceptedApplications.length === 0) {
+            html += `
+                                <div class="no-applications">
+                                    <div class="no-applications-icon">
+                                        <i class="fas fa-check-circle"></i>
+                                    </div>
+                                    <h3>No Accepted Applications</h3>
+                                    <p>No applications have been accepted yet.</p>
+                                </div>
+            `;
+        } else {
+            acceptedApplications.forEach((app) => {
+                const score = app.score ? app.score.split('/') : ['0', '8'];
+                const scoreValue = parseInt(score[0]);
+                const totalQuestions = parseInt(score[1]);
+                const percentage = (scoreValue / totalQuestions) * 100;
+                const usernameInitial = app.discord_username ? app.discord_username.charAt(0).toUpperCase() : 'U';
+                const reviewedDate = app.reviewed_at ? new Date(app.reviewed_at).toLocaleString() : 'Not reviewed';
+                const reviewer = app.reviewed_by || 'Unknown';
+                
+                // Parse conversation log if available
+                let conversationLogHTML = '';
+                if (app.conversation_log) {
+                    const conversationLog = app.conversation_log;
+                    const lines = conversationLog.split('\n').slice(0, 10);
+                    conversationLogHTML = `
+                        <div class="conversation-log-header">
+                            <span>Conversation Log</span>
+                            <button onclick="viewFullConversation(${app.id})" style="background: none; border: none; color: #00ffea; cursor: pointer; font-size: 11px;">
+                                <i class="fas fa-expand"></i> View Full
+                            </button>
+                        </div>
+                        <div class="conversation-log">
+                    `;
+                    
+                    lines.forEach(line => {
+                        if (line.trim()) {
+                            const timeMatch = line.match(/\[(\d{2}:\d{2}:\d{2})\]/);
+                            const time = timeMatch ? timeMatch[1] : '';
+                            const content = line.replace(/\[\d{2}:\d{2}:\d{2}\]/, '').trim();
+                            
+                            let sender = 'SYSTEM';
+                            let cssClass = '';
+                            
+                            if (content.includes('VOID BOT:')) {
+                                sender = 'BOT';
+                                cssClass = 'bot';
+                            } else if (content.includes('MODERATOR (You):') || content.includes('You:')) {
+                                sender = 'YOU';
+                                cssClass = 'user';
+                            }
+                            
+                            const message = content.replace(/^(VOID BOT:|MODERATOR \(You\):|You:|SYSTEM:)/, '').trim();
+                            
+                            conversationLogHTML += `
+                                <div class="conversation-entry ${cssClass}">
+                                    <span class="conversation-sender">${sender}:</span>
+                                    ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}
+                                    <span class="conversation-time">${time}</span>
+                                </div>
+                            `;
+                        }
+                    });
+                    
+                    conversationLogHTML += `</div>`;
+                }
+                
+                html += `
+                                <div class="application-card accepted" id="app-${app.id}" data-status="accepted">
+                                    <div class="card-header">
+                                        <div style="display: flex; align-items: flex-start;">
+                                            <div class="user-avatar-small">${usernameInitial}</div>
+                                            <div class="user-details">
+                                                <div class="username">${escapeHtml(app.discord_username)}</div>
+                                                <div class="user-id">ID: ${escapeHtml(app.discord_id)}</div>
+                                            </div>
+                                        </div>
+                                        <div class="application-status status-accepted">ACCEPTED</div>
+                                    </div>
+                                    
+                                    <div class="application-info">
+                                        <div class="info-row">
+                                            <span class="info-label">Reviewed by:</span>
+                                            <span class="info-value">${reviewer}</span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="info-label">Reviewed at:</span>
+                                            <span class="info-value">${reviewedDate}</span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="info-label">Score:</span>
+                                            <div class="score-display">
+                                                <span class="score-value">${scoreValue}</span>
+                                                <span class="score-total">/ ${totalQuestions}</span>
+                                                <span style="color: #888; font-size: 14px;">(${Math.round(percentage)}%)</span>
+                                            </div>
+                                        </div>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: ${percentage}%"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    ${conversationLogHTML}
+                                    
+                                    <div class="card-actions">
+                                        <button class="action-btn" disabled style="background: rgba(59, 165, 92, 0.3);">
+                                            <i class="fas fa-user-check"></i> Role Assigned
+                                        </button>
+                                    </div>
+                                </div>
+                `;
+            });
+        }
+        
+        html += `
+                            </div>
+                        </div>
+                        
+                        <!-- Rejected Applications -->
+                        <div id="tab-rejected" class="applications-container">
+                            <div class="applications-grid">
+        `;
+        
+        // Render rejected applications
+        if (rejectedApplications.length === 0) {
+            html += `
+                                <div class="no-applications">
+                                    <div class="no-applications-icon">
+                                        <i class="fas fa-times-circle"></i>
+                                    </div>
+                                    <h3>No Rejected Applications</h3>
+                                    <p>No applications have been rejected yet.</p>
+                                </div>
+            `;
+        } else {
+            rejectedApplications.forEach((app) => {
+                const score = app.score ? app.score.split('/') : ['0', '8'];
+                const scoreValue = parseInt(score[0]);
+                const totalQuestions = parseInt(score[1]);
+                const percentage = (scoreValue / totalQuestions) * 100;
+                const usernameInitial = app.discord_username ? app.discord_username.charAt(0).toUpperCase() : 'U';
+                const reviewedDate = app.reviewed_at ? new Date(app.reviewed_at).toLocaleString() : 'Not reviewed';
+                const reviewer = app.reviewed_by || 'Unknown';
+                const reason = app.rejection_reason || 'No reason provided';
+                
+                // Parse conversation log if available
+                let conversationLogHTML = '';
+                if (app.conversation_log) {
+                    const conversationLog = app.conversation_log;
+                    const lines = conversationLog.split('\n').slice(0, 10);
+                    conversationLogHTML = `
+                        <div class="conversation-log-header">
+                            <span>Conversation Log</span>
+                            <button onclick="viewFullConversation(${app.id})" style="background: none; border: none; color: #00ffea; cursor: pointer; font-size: 11px;">
+                                <i class="fas fa-expand"></i> View Full
+                            </button>
+                        </div>
+                        <div class="conversation-log">
+                    `;
+                    
+                    lines.forEach(line => {
+                        if (line.trim()) {
+                            const timeMatch = line.match(/\[(\d{2}:\d{2}:\d{2})\]/);
+                            const time = timeMatch ? timeMatch[1] : '';
+                            const content = line.replace(/\[\d{2}:\d{2}:\d{2}\]/, '').trim();
+                            
+                            let sender = 'SYSTEM';
+                            let cssClass = '';
+                            
+                            if (content.includes('VOID BOT:')) {
+                                sender = 'BOT';
+                                cssClass = 'bot';
+                            } else if (content.includes('MODERATOR (You):') || content.includes('You:')) {
+                                sender = 'YOU';
+                                cssClass = 'user';
+                            }
+                            
+                            const message = content.replace(/^(VOID BOT:|MODERATOR \(You\):|You:|SYSTEM:)/, '').trim();
+                            
+                            conversationLogHTML += `
+                                <div class="conversation-entry ${cssClass}">
+                                    <span class="conversation-sender">${sender}:</span>
+                                    ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}
+                                    <span class="conversation-time">${time}</span>
+                                </div>
+                            `;
+                        }
+                    });
+                    
+                    conversationLogHTML += `</div>`;
+                }
+                
+                html += `
+                                <div class="application-card rejected" id="app-${app.id}" data-status="rejected">
+                                    <div class="card-header">
+                                        <div style="display: flex; align-items: flex-start;">
+                                            <div class="user-avatar-small">${usernameInitial}</div>
+                                            <div class="user-details">
+                                                <div class="username">${escapeHtml(app.discord_username)}</div>
+                                                <div class="user-id">ID: ${escapeHtml(app.discord_id)}</div>
+                                            </div>
+                                        </div>
+                                        <div class="application-status status-rejected">REJECTED</div>
+                                    </div>
+                                    
+                                    <div class="application-info">
+                                        <div class="info-row">
+                                            <span class="info-label">Reviewed by:</span>
+                                            <span class="info-value">${reviewer}</span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="info-label">Reviewed at:</span>
+                                            <span class="info-value">${reviewedDate}</span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="info-label">Reason:</span>
+                                            <span class="info-value" style="color: #ed4245; font-size: 13px;">${escapeHtml(reason.substring(0, 100))}${reason.length > 100 ? '...' : ''}</span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="info-label">Score:</span>
+                                            <div class="score-display">
+                                                <span class="score-value">${scoreValue}</span>
+                                                <span class="score-total">/ ${totalQuestions}</span>
+                                                <span style="color: #888; font-size: 14px;">(${Math.round(percentage)}%)</span>
+                                            </div>
+                                        </div>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: ${percentage}%"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    ${conversationLogHTML}
+                                    
+                                    <div class="card-actions">
+                                        <button class="action-btn" disabled style="background: rgba(237, 66, 69, 0.3);">
+                                            <i class="fas fa-comment-slash"></i> Rejection DM Sent
+                                        </button>
+                                    </div>
+                                </div>
+                `;
+            });
+        }
+        
+        html += `
+                            </div>
+                        </div>
+                        
+                        <!-- All Applications -->
+                        <div id="tab-all" class="applications-container">
+                            <div class="applications-grid">
+        `;
+        
+        // Render all applications
+        if (realApplications.length === 0) {
+            html += `
+                                <div class="no-applications">
+                                    <div class="no-applications-icon">
+                                        <i class="fas fa-inbox"></i>
+                                    </div>
+                                    <h3>No Applications</h3>
+                                    <p>No applications have been submitted yet.</p>
+                                </div>
+            `;
+        } else {
+            realApplications.forEach((app) => {
+                const score = app.score ? app.score.split('/') : ['0', '8'];
+                const scoreValue = parseInt(score[0]);
+                const totalQuestions = parseInt(score[1]);
+                const percentage = (scoreValue / totalQuestions) * 100;
+                const usernameInitial = app.discord_username ? app.discord_username.charAt(0).toUpperCase() : 'U';
+                const statusClass = app.status === 'pending' ? 'status-pending' : app.status === 'accepted' ? 'status-accepted' : 'status-rejected';
+                const statusText = app.status === 'pending' ? 'PENDING' : app.status === 'accepted' ? 'ACCEPTED' : 'REJECTED';
+                
+                // Parse conversation log if available
+                let conversationLogHTML = '';
+                if (app.conversation_log) {
+                    const conversationLog = app.conversation_log;
+                    const lines = conversationLog.split('\n').slice(0, 10);
+                    conversationLogHTML = `
+                        <div class="conversation-log-header">
+                            <span>Conversation Log</span>
+                            <button onclick="viewFullConversation(${app.id})" style="background: none; border: none; color: #00ffea; cursor: pointer; font-size: 11px;">
+                                <i class="fas fa-expand"></i> View Full
+                            </button>
+                        </div>
+                        <div class="conversation-log">
+                    `;
+                    
+                    lines.forEach(line => {
+                        if (line.trim()) {
+                            const timeMatch = line.match(/\[(\d{2}:\d{2}:\d{2})\]/);
+                            const time = timeMatch ? timeMatch[1] : '';
+                            const content = line.replace(/\[\d{2}:\d{2}:\d{2}\]/, '').trim();
+                            
+                            let sender = 'SYSTEM';
+                            let cssClass = '';
+                            
+                            if (content.includes('VOID BOT:')) {
+                                sender = 'BOT';
+                                cssClass = 'bot';
+                            } else if (content.includes('MODERATOR (You):') || content.includes('You:')) {
+                                sender = 'YOU';
+                                cssClass = 'user';
+                            }
+                            
+                            const message = content.replace(/^(VOID BOT:|MODERATOR \(You\):|You:|SYSTEM:)/, '').trim();
+                            
+                            conversationLogHTML += `
+                                <div class="conversation-entry ${cssClass}">
+                                    <span class="conversation-sender">${sender}:</span>
+                                    ${message.substring(0, 50)}${message.length > 50 ? '...' : ''}
+                                    <span class="conversation-time">${time}</span>
+                                </div>
+                            `;
+                        }
+                    });
+                    
+                    conversationLogHTML += `</div>`;
+                }
+                
+                html += `
+                                <div class="application-card ${app.status}" id="app-${app.id}" data-status="${app.status}">
+                                    <div class="card-header">
+                                        <div style="display: flex; align-items: flex-start;">
+                                            <div class="user-avatar-small">${usernameInitial}</div>
+                                            <div class="user-details">
+                                                <div class="username">${escapeHtml(app.discord_username)}</div>
+                                                <div class="user-id">ID: ${escapeHtml(app.discord_id)}</div>
+                                            </div>
+                                        </div>
+                                        <div class="application-status ${statusClass}">${statusText}</div>
+                                    </div>
+                                    
+                                    <div class="application-info">
+                                        <div class="info-row">
+                                            <span class="info-label">Status:</span>
+                                            <span class="info-value" style="color: ${app.status === 'pending' ? '#f59e0b' : app.status === 'accepted' ? '#3ba55c' : '#ed4245'}">
+                                                ${statusText}
+                                            </span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="info-label">Submitted:</span>
+                                            <span class="info-value">${new Date(app.created_at).toLocaleString()}</span>
+                                        </div>
+                                        <div class="info-row">
+                                            <span class="info-label">Score:</span>
+                                            <div class="score-display">
+                                                <span class="score-value">${scoreValue}</span>
+                                                <span class="score-total">/ ${totalQuestions}</span>
+                                                <span style="color: #888; font-size: 14px;">(${Math.round(percentage)}%)</span>
+                                            </div>
+                                        </div>
+                                        <div class="progress-bar">
+                                            <div class="progress-fill" style="width: ${percentage}%"></div>
+                                        </div>
+                                    </div>
+                                    
+                                    ${conversationLogHTML}
+                                    
+                                    ${app.status === 'pending' ? `
+                                    <div class="card-actions">
+                                        <button class="action-btn accept-btn" onclick="processApplication(${app.id}, 'accept', '${escapeHtml(app.discord_username)}')">
+                                            <i class="fas fa-check"></i> Accept
+                                        </button>
+                                        <button class="action-btn reject-btn" onclick="showRejectModal(${app.id}, '${escapeHtml(app.discord_username)}')">
+                                            <i class="fas fa-times"></i> Reject
+                                        </button>
+                                    </div>
+                                    ` : `
+                                    <div class="card-actions">
+                                        <button class="action-btn" disabled style="background: rgba(255, 255, 255, 0.1);">
+                                            <i class="fas fa-${app.status === 'accepted' ? 'user-check' : 'comment-slash'}"></i>
+                                            ${app.status === 'accepted' ? 'Role Assigned' : 'Rejection DM Sent'}
+                                        </button>
+                                    </div>
+                                    `}
+                                </div>
+                `;
+            });
+        }
+        
+        html += `
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Rejection Modal -->
+                <div class="modal-overlay" id="rejectModal">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h2 class="modal-title">
+                                <i class="fas fa-times-circle" style="color: #ed4245;"></i> Reject Application
+                            </h2>
+                            <button class="modal-close" onclick="closeRejectModal()">×</button>
+                        </div>
+                        <p style="margin-bottom: 20px; color: #888;">Please provide a reason for rejection. This will be sent to the user via DM.</p>
+                        <textarea class="modal-textarea" id="rejectReason" placeholder="Enter rejection reason...">Insufficient test score or incomplete application</textarea>
+                        <div class="modal-actions">
+                            <button class="modal-btn cancel" onclick="closeRejectModal()">Cancel</button>
+                            <button class="modal-btn confirm" id="confirmReject">Confirm Rejection</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Full Conversation Modal -->
+                <div class="modal-overlay" id="conversationModal">
+                    <div class="modal-content" style="max-width: 800px; max-height: 80vh; overflow: hidden;">
+                        <div class="modal-header">
+                            <h2 class="modal-title">
+                                <i class="fas fa-comments"></i> Full Conversation Log
+                            </h2>
+                            <button class="modal-close" onclick="closeConversationModal()">×</button>
+                        </div>
+                        <div id="fullConversationContent" style="max-height: 60vh; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; white-space: pre-wrap;"></div>
+                        <div class="modal-actions" style="margin-top: 20px;">
+                            <button class="modal-btn cancel" onclick="closeConversationModal()">Close</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <script>
+                    let currentAppId = null;
+                    let currentAppUsername = '';
+                    
+                    // Tab navigation
+                    function showTab(tabName) {
+                        // Hide all tabs
+                        document.querySelectorAll('.applications-container').forEach(tab => {
+                            tab.classList.remove('active');
+                        });
+                        
+                        // Remove active class from all buttons
+                        document.querySelectorAll('.tab-btn').forEach(btn => {
+                            btn.classList.remove('active');
+                        });
+                        
+                        // Show selected tab
+                        document.getElementById('tab-' + tabName).classList.add('active');
+                        
+                        // Activate button
+                        document.querySelectorAll('.tab-btn').forEach(btn => {
+                            if (btn.textContent.includes(tabName.charAt(0).toUpperCase() + tabName.slice(1)) || 
+                                (tabName === 'all' && btn.textContent.includes('All'))) {
+                                btn.classList.add('active');
+                            }
+                        });
+                        
+                        // Update URL without reload
+                        history.pushState(null, '', '/admin#' + tabName);
+                    }
+                    
+                    // Check URL hash on load
+                    window.addEventListener('load', function() {
+                        const hash = window.location.hash.substring(1);
+                        if (hash && ['pending', 'accepted', 'rejected', 'all'].includes(hash)) {
+                            showTab(hash);
+                        }
+                    });
+                    
+                    // Rejection modal
+                    function showRejectModal(appId, username) {
+                        currentAppId = appId;
+                        currentAppUsername = username;
+                        document.getElementById('rejectModal').classList.add('active');
+                        document.getElementById('rejectReason').focus();
+                    }
+                    
+                    function closeRejectModal() {
+                        document.getElementById('rejectModal').classList.remove('active');
+                        currentAppId = null;
+                        currentAppUsername = '';
+                    }
+                    
+                    // Conversation modal
+                    function viewFullConversation(appId) {
+                        fetch('/admin/conversation/' + appId)
+                            .then(response => response.json())
+                            .then(data => {
+                                if (data.success && data.conversation) {
+                                    document.getElementById('fullConversationContent').textContent = data.conversation;
+                                    document.getElementById('conversationModal').classList.add('active');
+                                } else {
+                                    alert('Could not load conversation log: ' + (data.error || 'Unknown error'));
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error loading conversation:', error);
+                                alert('Failed to load conversation log');
+                            });
+                    }
+                    
+                    function closeConversationModal() {
+                        document.getElementById('conversationModal').classList.remove('active');
+                        document.getElementById('fullConversationContent').textContent = '';
+                    }
+                    
+                    // Process application
+                    async function processApplication(appId, action, username = '') {
+                        const appCard = document.getElementById('app-' + appId);
+                        if (!appCard) return;
+                        
+                        const buttons = appCard.querySelectorAll('.action-btn');
+                        buttons.forEach(btn => {
+                            btn.disabled = true;
+                            if (btn.classList.contains('accept-btn')) {
+                                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+                            } else if (btn.classList.contains('reject-btn')) {
+                                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
+                            }
+                        });
+                        
+                        try {
+                            let url, options;
+                            
+                            if (action === 'accept') {
+                                url = '/admin/accept/' + appId;
+                                options = {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    credentials: 'include'
+                                };
+                            } else if (action === 'reject') {
+                                const reason = document.getElementById('rejectReason').value;
+                                url = '/admin/reject/' + appId;
+                                options = {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    credentials: 'include',
+                                    body: JSON.stringify({ reason: reason })
+                                };
+                                closeRejectModal();
+                            }
+                            
+                            const response = await fetch(url, options);
+                            const result = await response.json();
+                            
+                            console.log('Action result:', result);
+                            
+                            if (response.ok) {
+                                // Remove success/error messages if they exist
+                                const existingMessage = appCard.querySelector('.success-message, .error-message');
+                                if (existingMessage) existingMessage.remove();
+                                
+                                // Create success message
+                                const messageDiv = document.createElement('div');
+                                messageDiv.className = result.success ? 'success-message' : 'error-message';
+                                
+                                if (action === 'accept') {
+                                    if (result.success) {
+                                        messageDiv.innerHTML = \`
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <i class="fas fa-check-circle" style="color: #3ba55c; font-size: 20px;"></i>
+                                                <div>
+                                                    <strong style="color: #3ba55c;">✓ Application Accepted!</strong><br>
+                                                    <small>Role assigned: \${result.roleAssigned ? '✅' : '❌'} | DM sent: \${result.dmSent ? '✅' : '❌'}</small>
+                                                </div>
+                                            </div>
+                                        \`;
+                                        
+                                        // Update card status and move to accepted tab after delay
+                                        setTimeout(() => {
+                                            updateApplicationCardStatus(appId, 'accepted', result);
+                                        }, 1500);
+                                        
+                                    } else {
+                                        messageDiv.innerHTML = \`
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <i class="fas fa-exclamation-triangle" style="color: #ed4245; font-size: 20px;"></i>
+                                                <div>
+                                                    <strong style="color: #ed4245;">✗ Failed to accept</strong><br>
+                                                    <small>\${result.error || 'Unknown error'}</small>
+                                                </div>
+                                            </div>
+                                        \`;
+                                        
+                                        // Re-enable buttons on error
+                                        setTimeout(() => {
+                                            buttons.forEach(btn => {
+                                                btn.disabled = false;
+                                                if (btn.classList.contains('accept-btn')) {
+                                                    btn.innerHTML = '<i class="fas fa-check"></i> Accept & Assign Role';
+                                                } else if (btn.classList.contains('reject-btn')) {
+                                                    btn.innerHTML = '<i class="fas fa-times"></i> Reject';
+                                                }
+                                            });
+                                        }, 3000);
+                                    }
+                                } else if (action === 'reject') {
+                                    if (result.success) {
+                                        messageDiv.innerHTML = \`
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <i class="fas fa-check-circle" style="color: #3ba55c; font-size: 20px;"></i>
+                                                <div>
+                                                    <strong style="color: #3ba55c;">✓ Application Rejected!</strong><br>
+                                                    <small>Rejection DM sent: \${result.dmSent ? '✅' : '❌'}</small>
+                                                </div>
+                                            </div>
+                                        \`;
+                                        
+                                        // Update card status and move to rejected tab after delay
+                                        setTimeout(() => {
+                                            updateApplicationCardStatus(appId, 'rejected', result);
+                                        }, 1500);
+                                        
+                                    } else {
+                                        messageDiv.innerHTML = \`
+                                            <div style="display: flex; align-items: center; gap: 10px;">
+                                                <i class="fas fa-exclamation-triangle" style="color: #ed4245; font-size: 20px;"></i>
+                                                <div>
+                                                    <strong style="color: #ed4245;">✗ Failed to reject</strong><br>
+                                                    <small>\${result.error || 'Unknown error'}</small>
+                                                </div>
+                                            </div>
+                                        \`;
+                                    }
+                                }
+                                
+                                appCard.appendChild(messageDiv);
+                                
+                            } else {
+                                throw new Error(result.message || 'Failed to process application');
+                            }
+                            
+                        } catch (error) {
+                            console.error('Action failed:', error);
+                            
+                            const existingMessage = appCard.querySelector('.success-message, .error-message');
+                            if (existingMessage) existingMessage.remove();
+                            
+                            const errorDiv = document.createElement('div');
+                            errorDiv.className = 'error-message';
+                            errorDiv.innerHTML = \`
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <i class="fas fa-exclamation-triangle" style="color: #ed4245; font-size: 20px;"></i>
+                                    <div>
+                                        <strong style="color: #ed4245;">✗ Error</strong><br>
+                                        <small>\${error.message}</small>
+                                    </div>
+                                </div>
+                            \`;
+                            
+                            appCard.appendChild(errorDiv);
+                            
+                            // Re-enable buttons on error
+                            setTimeout(() => {
+                                buttons.forEach(btn => {
+                                    btn.disabled = false;
+                                    if (btn.classList.contains('accept-btn')) {
+                                        btn.innerHTML = '<i class="fas fa-check"></i> Accept & Assign Role';
+                                    } else if (btn.classList.contains('reject-btn')) {
+                                        btn.innerHTML = '<i class="fas fa-times"></i> Reject';
+                                    }
+                                });
+                            }, 3000);
+                        }
+                    }
+                    
+                    // Update application card status and move to correct tab
+                    function updateApplicationCardStatus(appId, newStatus, result) {
+                        const appCard = document.getElementById('app-' + appId);
+                        if (!appCard) return;
+                        
+                        // Get current tab counts
+                        const pendingTab = document.querySelector('.tab-btn[onclick*="pending"] .tab-badge');
+                        const acceptedTab = document.querySelector('.tab-btn[onclick*="accepted"] .tab-badge');
+                        const rejectedTab = document.querySelector('.tab-btn[onclick*="rejected"] .tab-badge');
+                        const allTab = document.querySelector('.tab-btn[onclick*="all"] .tab-badge');
+                        
+                        // Update tab badges
+                        if (newStatus === 'accepted') {
+                            // Decrease pending, increase accepted
+                            if (pendingTab) pendingTab.textContent = Math.max(0, parseInt(pendingTab.textContent) - 1);
+                            if (acceptedTab) acceptedTab.textContent = parseInt(acceptedTab.textContent) + 1;
+                        } else if (newStatus === 'rejected') {
+                            // Decrease pending, increase rejected
+                            if (pendingTab) pendingTab.textContent = Math.max(0, parseInt(pendingTab.textContent) - 1);
+                            if (rejectedTab) rejectedTab.textContent = parseInt(rejectedTab.textContent) + 1;
+                        }
+                        
+                        // Update card appearance
+                        appCard.className = appCard.className.replace(/pending|accepted|rejected/g, newStatus);
+                        appCard.setAttribute('data-status', newStatus);
+                        
+                        // Update status badge
+                        const statusBadge = appCard.querySelector('.application-status');
+                        if (statusBadge) {
+                            statusBadge.className = 'application-status ' + 
+                                (newStatus === 'pending' ? 'status-pending' : 
+                                 newStatus === 'accepted' ? 'status-accepted' : 'status-rejected');
+                            statusBadge.textContent = newStatus.toUpperCase();
+                        }
+                        
+                        // Update buttons
+                        const cardActions = appCard.querySelector('.card-actions');
+                        if (cardActions) {
+                            if (newStatus === 'accepted') {
+                                cardActions.innerHTML = \`
+                                    <button class="action-btn" disabled style="background: rgba(59, 165, 92, 0.3);">
+                                        <i class="fas fa-user-check"></i> Role Assigned
+                                    </button>
+                                \`;
+                            } else if (newStatus === 'rejected') {
+                                const reason = result.rejectionReason || 'Insufficient test score';
+                                cardActions.innerHTML = \`
+                                    <button class="action-btn" disabled style="background: rgba(237, 66, 69, 0.3);">
+                                        <i class="fas fa-comment-slash"></i> Rejection DM Sent
+                                    </button>
+                                \`;
+                            }
+                        }
+                        
+                        // Remove the card from pending tab if we're viewing pending
+                        const activeTab = document.querySelector('.applications-container.active');
+                        if (activeTab && activeTab.id === 'tab-pending') {
+                            // Remove card with animation
+                            appCard.style.opacity = '0.5';
+                            appCard.style.transform = 'translateX(-20px)';
+                            setTimeout(() => {
+                                appCard.remove();
+                                
+                                // Check if pending tab is now empty
+                                const pendingGrid = document.getElementById('tab-pending').querySelector('.applications-grid');
+                                if (pendingGrid && pendingGrid.children.length === 0) {
+                                    pendingGrid.innerHTML = \`
+                                        <div class="no-applications">
+                                            <div class="no-applications-icon">
+                                                <i class="fas fa-inbox"></i>
+                                            </div>
+                                            <h3>No Pending Applications</h3>
+                                            <p>All applications have been reviewed.</p>
+                                        </div>
+                                    \`;
+                                }
+                            }, 500);
+                        }
+                        
+                        // Add card to correct tab if that tab is active
+                        const targetTabId = 'tab-' + newStatus;
+                        const targetTab = document.getElementById(targetTabId);
+                        if (targetTab && targetTab.classList.contains('active')) {
+                            const targetGrid = targetTab.querySelector('.applications-grid');
+                            if (targetGrid) {
+                                // Remove no applications message if present
+                                const noApplications = targetGrid.querySelector('.no-applications');
+                                if (noApplications) {
+                                    noApplications.remove();
+                                }
+                                
+                                // Add card to grid
+                                targetGrid.insertBefore(appCard, targetGrid.firstChild);
+                                
+                                // Reset card style
+                                setTimeout(() => {
+                                    appCard.style.opacity = '1';
+                                    appCard.style.transform = 'translateY(-5px)';
+                                    setTimeout(() => {
+                                        appCard.style.transform = 'translateY(0)';
+                                    }, 300);
+                                }, 100);
+                            }
+                        }
+                    }
+                    
+                    // Confirm rejection
+                    document.getElementById('confirmReject').addEventListener('click', function() {
+                        if (currentAppId) {
+                            processApplication(currentAppId, 'reject', currentAppUsername);
+                        }
+                    });
+                    
+                    // Close modals on escape key
+                    document.addEventListener('keydown', function(e) {
+                        if (e.key === 'Escape') {
+                            closeRejectModal();
+                            closeConversationModal();
+                        }
+                    });
+                    
+                    // Auto-refresh every 30 seconds
+                    setInterval(() => {
+                        // Only refresh if we're on pending tab
+                        const activeTab = document.querySelector('.applications-container.active');
+                        if (activeTab && activeTab.id === 'tab-pending') {
+                            location.reload();
+                        }
+                    }, 30000);
+                </script>
+            </body>
+            </html>
+        `;
+
+        res.send(html);
+    } catch (err) {
+        console.error("Admin error:", err);
+        res.status(500).send(`
+            <!DOCTYPE html>
+            <html>
+            <head><title>Server Error</title></head>
+            <body>
+                <h1>Server Error</h1>
+                <p>${err.message}</p>
+                <p><a href="/admin">Try Again</a></p>
+            </body>
+            </html>
+        `);
     }
-    
-    res.json(application);
-  } catch (err) {
-    console.error("Get application error:", err);
-    res.status(500).json({ error: err.message });
-  }
 });
 
+/* ================= ADMIN GET CONVERSATION ENDPOINT ================= */
+
+app.get("/admin/conversation/:id", async (req, res) => {
+    try {
+        // Check if admin is authenticated
+        if (!req.session.user || !req.session.isAdmin) {
+            return res.status(401).json({ success: false, error: "Unauthorized" });
+        }
+        
+        const { data: application, error } = await supabase
+            .from("applications")
+            .select("conversation_log")
+            .eq("id", req.params.id)
+            .single();
+        
+        if (error || !application) {
+            return res.status(404).json({ success: false, error: "Application not found" });
+        }
+        
+        res.json({
+            success: true,
+            conversation: application.conversation_log || "No conversation log available."
+        });
+    } catch (err) {
+        console.error("Get conversation error:", err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 /* ================= ADMIN ACTIONS ENDPOINTS - FIXED REJECTION ERROR ================= */
 
 app.post("/admin/accept/:id", async (req, res) => {
