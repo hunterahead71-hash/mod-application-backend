@@ -2656,10 +2656,15 @@ app.get("/admin", async (req, res) => {
                         document.getElementById('fullConversationContent').textContent = '';
                     }
                     
-                    // Process application
+                    // Process application - FIXED FUNCTION
                     async function processApplication(appId, action, username = '') {
+                        console.log('Processing application:', appId, action, username);
+                        
                         const appCard = document.getElementById('app-' + appId);
-                        if (!appCard) return;
+                        if (!appCard) {
+                            console.error('Application card not found:', 'app-' + appId);
+                            return;
+                        }
                         
                         const buttons = appCard.querySelectorAll('.action-btn');
                         buttons.forEach(btn => {
@@ -2693,99 +2698,83 @@ app.get("/admin", async (req, res) => {
                                 closeRejectModal();
                             }
                             
+                            console.log('Sending request to:', url);
                             const response = await fetch(url, options);
                             const result = await response.json();
                             
                             console.log('Action result:', result);
                             
-                           if (response.ok && result.success) {
-    // success UI
-                              setTimeout(() => {
-                                  updateApplicationCardStatus(appId, action === 'accept' ? 'accepted' : 'rejected', result);
-                              }, 1200);
-                          } else {
-                              throw new Error(result.error || result.message || "Unknown error");
-                          }
-
-                                
+                            // Remove any existing messages
+                            const existingMessage = appCard.querySelector('.success-message, .error-message');
+                            if (existingMessage) existingMessage.remove();
+                            
+                            if (response.ok && result.success) {
                                 // Create success message
                                 const messageDiv = document.createElement('div');
-                                messageDiv.className = result.success ? 'success-message' : 'error-message';
+                                messageDiv.className = 'success-message';
                                 
                                 if (action === 'accept') {
-                                    if (result.success) {
-                                        messageDiv.innerHTML = \`
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <i class="fas fa-check-circle" style="color: #3ba55c; font-size: 20px;"></i>
-                                                <div>
-                                                    <strong style="color: #3ba55c;">✓ Application Accepted!</strong><br>
-                                                    <small>Role assigned: \${result.roleAssigned ? '✅' : '❌'} | DM sent: \${result.dmSent ? '✅' : '❌'}</small>
-                                                </div>
+                                    messageDiv.innerHTML = \`
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <i class="fas fa-check-circle" style="color: #3ba55c; font-size: 20px;"></i>
+                                            <div>
+                                                <strong style="color: #3ba55c;">✓ Application Accepted!</strong><br>
+                                                <small>Role assigned: \${result.roleAssigned ? '✅' : '❌'} | DM sent: \${result.dmSent ? '✅' : '❌'}</small>
                                             </div>
-                                        \`;
-                                        
-                                        // Update card status and move to accepted tab after delay
-                                        setTimeout(() => {
-                                            updateApplicationCardStatus(appId, 'accepted', result);
-                                        }, 1500);
-                                        
-                                    } else {
-                                        messageDiv.innerHTML = \`
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <i class="fas fa-exclamation-triangle" style="color: #ed4245; font-size: 20px;"></i>
-                                                <div>
-                                                    <strong style="color: #ed4245;">✗ Failed to accept</strong><br>
-                                                    <small>\${result.error || 'Unknown error'}</small>
-                                                </div>
-                                            </div>
-                                        \`;
-                                        
-                                        // Re-enable buttons on error
-                                        setTimeout(() => {
-                                            buttons.forEach(btn => {
-                                                btn.disabled = false;
-                                                if (btn.classList.contains('accept-btn')) {
-                                                    btn.innerHTML = '<i class="fas fa-check"></i> Accept & Assign Role';
-                                                } else if (btn.classList.contains('reject-btn')) {
-                                                    btn.innerHTML = '<i class="fas fa-times"></i> Reject';
-                                                }
-                                            });
-                                        }, 3000);
-                                    }
+                                        </div>
+                                    \`;
+                                    
+                                    // Update application status and move to accepted tab
+                                    setTimeout(() => {
+                                        updateApplicationCardStatus(appId, 'accepted', result);
+                                    }, 1200);
+                                    
                                 } else if (action === 'reject') {
-                                    if (result.success) {
-                                        messageDiv.innerHTML = \`
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <i class="fas fa-check-circle" style="color: #3ba55c; font-size: 20px;"></i>
-                                                <div>
-                                                    <strong style="color: #3ba55c;">✓ Application Rejected!</strong><br>
-                                                    <small>Rejection DM sent: \${result.dmSent ? '✅' : '❌'}</small>
-                                                </div>
+                                    messageDiv.innerHTML = \`
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <i class="fas fa-check-circle" style="color: #3ba55c; font-size: 20px;"></i>
+                                            <div>
+                                                <strong style="color: #3ba55c;">✓ Application Rejected!</strong><br>
+                                                <small>Rejection DM sent: \${result.dmSent ? '✅' : '❌'}</small>
                                             </div>
-                                        \`;
-                                        
-                                        // Update card status and move to rejected tab after delay
-                                        setTimeout(() => {
-                                            updateApplicationCardStatus(appId, 'rejected', result);
-                                        }, 1500);
-                                        
-                                    } else {
-                                        messageDiv.innerHTML = \`
-                                            <div style="display: flex; align-items: center; gap: 10px;">
-                                                <i class="fas fa-exclamation-triangle" style="color: #ed4245; font-size: 20px;"></i>
-                                                <div>
-                                                    <strong style="color: #ed4245;">✗ Failed to reject</strong><br>
-                                                    <small>\${result.error || 'Unknown error'}</small>
-                                                </div>
-                                            </div>
-                                        \`;
-                                    }
+                                        </div>
+                                    \`;
+                                    
+                                    // Update application status and move to rejected tab
+                                    setTimeout(() => {
+                                        updateApplicationCardStatus(appId, 'rejected', result);
+                                    }, 1200);
                                 }
                                 
                                 appCard.appendChild(messageDiv);
                                 
                             } else {
-                                throw new Error(result.message || 'Failed to process application');
+                                // Create error message
+                                const errorDiv = document.createElement('div');
+                                errorDiv.className = 'error-message';
+                                errorDiv.innerHTML = \`
+                                    <div style="display: flex; align-items: center; gap: 10px;">
+                                        <i class="fas fa-exclamation-triangle" style="color: #ed4245; font-size: 20px;"></i>
+                                        <div>
+                                            <strong style="color: #ed4245;">✗ Failed to process</strong><br>
+                                            <small>\${result.error || result.message || 'Unknown error'}</small>
+                                        </div>
+                                    </div>
+                                \`;
+                                
+                                appCard.appendChild(errorDiv);
+                                
+                                // Re-enable buttons on error
+                                setTimeout(() => {
+                                    buttons.forEach(btn => {
+                                        btn.disabled = false;
+                                        if (btn.classList.contains('accept-btn')) {
+                                            btn.innerHTML = '<i class="fas fa-check"></i> Accept & Assign Role';
+                                        } else if (btn.classList.contains('reject-btn')) {
+                                            btn.innerHTML = '<i class="fas fa-times"></i> Reject';
+                                        }
+                                    });
+                                }, 3000);
                             }
                             
                         } catch (error) {
@@ -2822,10 +2811,15 @@ app.get("/admin", async (req, res) => {
                         }
                     }
                     
-                    // Update application card status and move to correct tab
+                    // Update application card status and move to correct tab - FIXED FUNCTION
                     function updateApplicationCardStatus(appId, newStatus, result) {
+                        console.log('Updating card status:', appId, newStatus);
+                        
                         const appCard = document.getElementById('app-' + appId);
-                        if (!appCard) return;
+                        if (!appCard) {
+                            console.error('Card not found:', 'app-' + appId);
+                            return;
+                        }
                         
                         // Get current tab counts
                         const pendingTab = document.querySelector('.tab-btn[onclick*="pending"] .tab-badge');
@@ -2836,16 +2830,28 @@ app.get("/admin", async (req, res) => {
                         // Update tab badges
                         if (newStatus === 'accepted') {
                             // Decrease pending, increase accepted
-                            if (pendingTab) pendingTab.textContent = Math.max(0, parseInt(pendingTab.textContent) - 1);
-                            if (acceptedTab) acceptedTab.textContent = parseInt(acceptedTab.textContent) + 1;
+                            if (pendingTab) {
+                                const current = parseInt(pendingTab.textContent);
+                                pendingTab.textContent = Math.max(0, current - 1);
+                            }
+                            if (acceptedTab) {
+                                const current = parseInt(acceptedTab.textContent);
+                                acceptedTab.textContent = current + 1;
+                            }
                         } else if (newStatus === 'rejected') {
                             // Decrease pending, increase rejected
-                            if (pendingTab) pendingTab.textContent = Math.max(0, parseInt(pendingTab.textContent) - 1);
-                            if (rejectedTab) rejectedTab.textContent = parseInt(rejectedTab.textContent) + 1;
+                            if (pendingTab) {
+                                const current = parseInt(pendingTab.textContent);
+                                pendingTab.textContent = Math.max(0, current - 1);
+                            }
+                            if (rejectedTab) {
+                                const current = parseInt(rejectedTab.textContent);
+                                rejectedTab.textContent = current + 1;
+                            }
                         }
                         
                         // Update card appearance
-                        appCard.className = appCard.className.replace(/pending|accepted|rejected/g, newStatus);
+                        appCard.className = 'application-card ' + newStatus;
                         appCard.setAttribute('data-status', newStatus);
                         
                         // Update status badge
@@ -2864,13 +2870,15 @@ app.get("/admin", async (req, res) => {
                                 cardActions.innerHTML = \`
                                     <button class="action-btn" disabled style="background: rgba(59, 165, 92, 0.3);">
                                         <i class="fas fa-user-check"></i> Role Assigned
-                                    \`;
+                                    </button>
+                                \`;
                             } else if (newStatus === 'rejected') {
                                 const reason = result.rejectionReason || 'Insufficient test score';
                                 cardActions.innerHTML = \`
                                     <button class="action-btn" disabled style="background: rgba(237, 66, 69, 0.3);">
                                         <i class="fas fa-comment-slash"></i> Rejection DM Sent
-                                    \`;
+                                    </button>
+                                \`;
                             }
                         }
                         
@@ -2878,25 +2886,35 @@ app.get("/admin", async (req, res) => {
                         const activeTab = document.querySelector('.applications-container.active');
                         if (activeTab && activeTab.id === 'tab-pending') {
                             // Remove card with animation
+                            appCard.style.transition = 'all 0.5s ease';
                             appCard.style.opacity = '0.5';
                             appCard.style.transform = 'translateX(-20px)';
+                            appCard.style.height = appCard.offsetHeight + 'px';
+                            
                             setTimeout(() => {
-                                appCard.remove();
+                                appCard.style.height = '0';
+                                appCard.style.margin = '0';
+                                appCard.style.padding = '0';
+                                appCard.style.border = '0';
                                 
-                                // Check if pending tab is now empty
-                                const pendingGrid = document.getElementById('tab-pending').querySelector('.applications-grid');
-                                if (pendingGrid && pendingGrid.children.length === 0) {
-                                    pendingGrid.innerHTML = \`
-                                        <div class="no-applications">
-                                            <div class="no-applications-icon">
-                                                <i class="fas fa-inbox"></i>
+                                setTimeout(() => {
+                                    appCard.remove();
+                                    
+                                    // Check if pending tab is now empty
+                                    const pendingGrid = document.getElementById('tab-pending').querySelector('.applications-grid');
+                                    if (pendingGrid && pendingGrid.children.length === 0) {
+                                        pendingGrid.innerHTML = \`
+                                            <div class="no-applications">
+                                                <div class="no-applications-icon">
+                                                    <i class="fas fa-inbox"></i>
+                                                </div>
+                                                <h3>No Pending Applications</h3>
+                                                <p>All applications have been reviewed.</p>
                                             </div>
-                                            <h3>No Pending Applications</h3>
-                                            <p>All applications have been reviewed.</p>
-                                        </div>
-                                    \`;
-                                }
-                            }, 500);
+                                        \`;
+                                    }
+                                }, 300);
+                            }, 300);
                         }
                         
                         // Add card to correct tab if that tab is active
@@ -2911,17 +2929,23 @@ app.get("/admin", async (req, res) => {
                                     noApplications.remove();
                                 }
                                 
+                                // Reset card style before adding
+                                appCard.style.transition = 'all 0.3s ease';
+                                appCard.style.opacity = '0';
+                                appCard.style.transform = 'translateY(20px)';
+                                appCard.style.height = 'auto';
+                                appCard.style.margin = '';
+                                appCard.style.padding = '';
+                                appCard.style.border = '';
+                                
                                 // Add card to grid
                                 targetGrid.insertBefore(appCard, targetGrid.firstChild);
                                 
-                                // Reset card style
+                                // Animate card in
                                 setTimeout(() => {
                                     appCard.style.opacity = '1';
-                                    appCard.style.transform = 'translateY(-5px)';
-                                    setTimeout(() => {
-                                        appCard.style.transform = 'translateY(0)';
-                                    }, 300);
-                                }, 100);
+                                    appCard.style.transform = 'translateY(0)';
+                                }, 10);
                             }
                         }
                     }
@@ -3713,6 +3737,8 @@ app.listen(PORT, () => {
 ║    • ✅ Admin panel status updates properly                         ║
 ║    • ✅ Conversation logs saved to database and webhook             ║
 ║    • ✅ Role assignment DM sends working                            ║
+║    • ✅ Accept/Reject buttons now working properly                  ║
+║    • ✅ Applications move to correct sections                       ║
 ║ 👑 Admin Panel: /admin                                              ║
 ║ 🧪 Test Login: /auth/discord                                        ║
 ║ 🏥 Health Check: /health                                            ║
