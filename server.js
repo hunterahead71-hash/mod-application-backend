@@ -2864,15 +2864,13 @@ app.get("/admin", async (req, res) => {
                                 cardActions.innerHTML = \`
                                     <button class="action-btn" disabled style="background: rgba(59, 165, 92, 0.3);">
                                         <i class="fas fa-user-check"></i> Role Assigned
-                                    </button>
-                                \`;
+                                    \`;
                             } else if (newStatus === 'rejected') {
                                 const reason = result.rejectionReason || 'Insufficient test score';
                                 cardActions.innerHTML = \`
                                     <button class="action-btn" disabled style="background: rgba(237, 66, 69, 0.3);">
                                         <i class="fas fa-comment-slash"></i> Rejection DM Sent
-                                    </button>
-                                \`;
+                                    \`;
                             }
                         }
                         
@@ -3078,14 +3076,14 @@ app.post("/admin/accept/:id", async (req, res) => {
       updateData.notes = `ROLE ASSIGNMENT FAILED: ${roleResult.error || 'Unknown error'}`;
     }
     
-    const { error: statusupdateError } = await supabase
+    const { error: dbUpdateError } = await supabase
       .from("applications")
       .update(updateData)
       .eq("id", req.params.id);
     
-    if (statusupdateError) {
-      console.error("Database update error:", updateError);
-      throw updateError;
+    if (dbUpdateError) {
+      console.error("Database update error:", dbUpdateError);
+      throw dbUpdateError;
     }
     
     console.log(`✅ Database updated successfully with status: accepted`);
@@ -3140,22 +3138,24 @@ app.post("/admin/accept/:id", async (req, res) => {
         console.error("Webhook error:", webhookError.message);
       }
     }
-    const { error: statusupdateError } = await supabase
+    
+    const { error: statusUpdateError } = await supabase
         .from("applications")
         .update({
             status: "accepted",
             processed_at: new Date().toISOString()
         })
-        .eq("id", applicationId);
-    if (statusupdateError) {
-        console.error("DB UPDATE ERROR (ACCEPT):", updateError);
+        .eq("id", req.params.id);
+    
+    if (statusUpdateError) {
+        console.error("DB UPDATE ERROR (ACCEPT):", statusUpdateError);
         return res.json({
             success: false,
             message: "Role given, but database update failed"
         });
     }   
 
-            // Return appropriate response
+    // Return appropriate response
     if (roleResult.success) {
       res.json({ 
         success: true, 
@@ -3253,7 +3253,7 @@ app.post("/admin/reject/:id", async (req, res) => {
     
     // CRITICAL FIX: Update database BEFORE returning
     console.log(`💾 Step 2: Updating database...`);
-    const { error: updateError } = await supabase
+    const { error: dbUpdateError } = await supabase
       .from("applications")
       .update({ 
         status: "rejected",
@@ -3265,9 +3265,9 @@ app.post("/admin/reject/:id", async (req, res) => {
       })
       .eq("id", req.params.id);
     
-    if (updateError) {
-      console.error("Database update error:", updateError);
-      throw updateError;
+    if (dbUpdateError) {
+      console.error("Database update error:", dbUpdateError);
+      throw dbUpdateError;
     }
     
     console.log(`✅ Database updated successfully with status: rejected`);
@@ -3318,23 +3318,25 @@ app.post("/admin/reject/:id", async (req, res) => {
       }
     }
     
-    console.log(`✅ ========== APPLICATION ${req.params.id} REJECTED SUCCESSFULLY ==========\n`);
-    const { error: updateError } = await supabase
+    const { error: statusUpdateError } = await supabase
         .from("applications")
         .update({
             status: "rejected",
             rejection_reason: reason || null,
             processed_at: new Date().toISOString()
         })
-        .eq("id", applicationId);
+        .eq("id", req.params.id);
 
-    if (updateError) {
-        console.error("DB UPDATE ERROR (REJECT):", updateError);
+    if (statusUpdateError) {
+        console.error("DB UPDATE ERROR (REJECT):", statusUpdateError);
         return res.json({
             success: false,
             message: "DM sent, but database update failed"
         });
     }
+    
+    console.log(`✅ ========== APPLICATION ${req.params.id} REJECTED SUCCESSFULLY ==========\n`);
+    
     res.json({ 
       success: true, 
       message: "Application rejected successfully",
@@ -3545,6 +3547,7 @@ app.post("/submit-test-results", async (req, res) => {
     });
   }
 });
+
 /* ================= SIMPLE RELIABLE ENDPOINT FOR FRONTEND - FIXED ================= */
 
 app.post("/api/submit", async (req, res) => {
