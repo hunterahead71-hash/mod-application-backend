@@ -3140,8 +3140,22 @@ app.post("/admin/accept/:id", async (req, res) => {
         console.error("Webhook error:", webhookError.message);
       }
     }
-    
-    // Return appropriate response
+    const { error: updateError } = await supabase
+        .from("applications")
+        .update({
+            status: "accepted",
+            processed_at: new Date().toISOString()
+        })
+        .eq("id", applicationId);
+    if (updateError) {
+        console.error("DB UPDATE ERROR (ACCEPT):", updateError);
+        return res.json({
+            success: false,
+            message: "Role given, but database update failed"
+        });
+    }   
+
+            // Return appropriate response
     if (roleResult.success) {
       res.json({ 
         success: true, 
@@ -3305,7 +3319,22 @@ app.post("/admin/reject/:id", async (req, res) => {
     }
     
     console.log(`✅ ========== APPLICATION ${req.params.id} REJECTED SUCCESSFULLY ==========\n`);
-    
+    const { error: updateError } = await supabase
+        .from("applications")
+        .update({
+            status: "rejected",
+            rejection_reason: reason || null,
+            processed_at: new Date().toISOString()
+        })
+        .eq("id", applicationId);
+
+    if (updateError) {
+        console.error("DB UPDATE ERROR (REJECT):", updateError);
+        return res.json({
+            success: false,
+            message: "DM sent, but database update failed"
+        });
+    }
     res.json({ 
       success: true, 
       message: "Application rejected successfully",
