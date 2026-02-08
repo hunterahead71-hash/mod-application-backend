@@ -2997,8 +2997,6 @@ app.get("/admin/conversation/:id", async (req, res) => {
     }
 });
 
-/* ================= ADMIN ACTIONS ENDPOINTS - FIXED REJECTION ERROR ================= */
-
 app.post("/admin/accept/:id", async (req, res) => {
   try {
     console.log(`\n🔵 ========== ACCEPTING APPLICATION ${req.params.id} ==========`);
@@ -3025,8 +3023,11 @@ app.post("/admin/accept/:id", async (req, res) => {
     console.log(`   - Score: ${application.score}`);
     console.log(`   - Current Status: ${application.status}`);
     
-    // Check if already processed
-    if (application.status !== 'pending') {
+    // CRITICAL FIX: Check if already processed - but don't skip if already accepted
+    if (application.status === 'accepted') {
+      console.log(`⚠️ Application already accepted, checking role assignment...`);
+      // Even if already accepted, we should still try to assign role if not done
+    } else if (application.status !== 'pending') {
       console.log(`⚠️ Application already ${application.status}, skipping`);
       return res.json({ 
         success: true, 
@@ -3036,7 +3037,6 @@ app.post("/admin/accept/:id", async (req, res) => {
       });
     }
     
-    // Check if user is a test user
     const username = application.discord_username.toLowerCase();
     const id = application.discord_id;
     const isTestUser = username.includes('test') || id.includes('test') || username === 'user' || id === '0000' || id.length < 5;
@@ -3057,59 +3057,52 @@ app.post("/admin/accept/:id", async (req, res) => {
     
     console.log(`📊 Role assignment result:`, roleResult);
     
-    // Update database based on role assignment result
-    let databaseUpdateResult;
+    // CRITICAL FIX: Update database FIRST before anything else
+    console.log(`💾 Step 2: Updating database FIRST...`);
+    const updateData = { 
+      status: "accepted",
+      updated_at: new Date().toISOString(),
+      reviewed_by: req.session.user.username,
+      reviewed_at: new Date().toISOString()
+    };
+    
+    // Add notes based on role assignment result
     if (roleResult.success) {
-      // Role assigned successfully
-      console.log(`✅ Role assignment successful, updating database...`);
-      
-      const { error: updateError } = await supabase
-        .from("applications")
-        .update({ 
-          status: "accepted",
-          updated_at: new Date().toISOString(),
-          reviewed_by: req.session.user.username,
-          reviewed_at: new Date().toISOString(),
-          notes: `Role assigned: ${roleResult.details?.role || 'Mod Role'}. DM sent: ${roleResult.dmSent || false}`
-        })
-        .eq("id", req.params.id);
-      
-      databaseUpdateResult = updateError;
-      
-      if (updateError) {
-        console.error("Database update error:", updateError);
-      } else {
-        console.log(`✅ Database updated successfully`);
-      }
+      updateData.notes = `Role assigned: ${roleResult.details?.role || 'Mod Role'}. DM sent: ${roleResult.dmSent || false}`;
     } else {
-      // Role assignment failed
-      console.log(`❌ Role assignment failed, updating database with failure status...`);
-      
-      const { error: updateError } = await supabase
-        .from("applications")
-        .update({ 
-          status: "accepted", // Still mark as accepted even if role assignment failed
-          updated_at: new Date().toISOString(),
-          reviewed_by: req.session.user.username,
-          reviewed_at: new Date().toISOString(),
-          notes: `ROLE ASSIGNMENT FAILED: ${roleResult.error || 'Unknown error'}`
-        })
-        .eq("id", req.params.id);
-      
-      databaseUpdateResult = updateError;
-      
-      if (updateError) {
-        console.error("Database update error:", updateError);
-      }
+      updateData.notes = `ROLE ASSIGNMENT FAILED: ${roleResult.error || 'Unknown error'}`;
     }
     
-    // Send webhook notification
+    const { error: updateError } = await supabase
+      .from("applications")
+      .update(updateData)
+      .eq("id", req.params.id);
+    
+    if (updateError) {
+      console.error("Database update error:", updateError);
+      throw updateError;
+    }
+    
+    console.log(`✅ Database updated successfully with status: accepted`);
+    
+    // Send webhook notification WITH CONVERSATION LOG
     if (process.env.DISCORD_WEBHOOK_URL) {
       try {
         const embedColor = roleResult.success ? 0x3ba55c : 0xf59e0b;
         const embedTitle = roleResult.success 
           ? "✅ APPLICATION ACCEPTED & ROLE ASSIGNED" 
           : "⚠️ APPLICATION ACCEPTED - ROLE ASSIGNMENT FAILED";
+        
+        // Get conversation log preview
+        let conversationPreview = "No conversation log available";
+        if (application.conversation_log && application.conversation_log.length > 0) {
+          const lines = application.conversation_log.split('\n');
+          const previewLines = lines.slice(0, 10); // First 10 lines
+          conversationPreview = previewLines.join('\n');
+          if (conversationPreview.length > 800) {
+            conversationPreview = conversationPreview.substring(0, 800) + "...";
+          }
+        }
         
         const embed = {
           title: embedTitle,
@@ -3118,6 +3111,11 @@ app.post("/admin/accept/:id", async (req, res) => {
             {
               name: "📊 Details",
               value: `\`\`\`\nApplication ID: ${application.id}\nStatus: ACCEPTED\nRole Assignment: ${roleResult.success ? "SUCCESS" : "FAILED"}\nError: ${roleResult.error || "None"}\nDM Sent: ${roleResult.dmSent ? "YES" : "NO"}\nTime: ${new Date().toLocaleString()}\n\`\`\``,
+              inline: false
+            },
+            {
+              name: "💬 Conversation Log Preview",
+              value: `\`\`\`\n${conversationPreview}\n\`\`\``,
               inline: false
             }
           ],
@@ -3132,7 +3130,7 @@ app.post("/admin/accept/:id", async (req, res) => {
           embeds: [embed],
           username: "Admin System"
         });
-        console.log(`✅ Webhook notification sent`);
+        console.log(`✅ Webhook notification sent with conversation log`);
       } catch (webhookError) {
         console.error("Webhook error:", webhookError.message);
       }
@@ -3206,12 +3204,12 @@ app.post("/admin/reject/:id", async (req, res) => {
     console.log(`   - Score: ${application.score}`);
     console.log(`   - Current Status: ${application.status}`);
     
-    // Check if already processed
-    if (application.status !== 'pending') {
-      console.log(`⚠️ Application already ${application.status}, skipping`);
+    // CRITICAL FIX: Check if already processed - but still process if not accepted
+    if (application.status === 'rejected') {
+      console.log(`⚠️ Application already rejected, skipping`);
       return res.json({ 
         success: true, 
-        message: `Application was already ${application.status}`,
+        message: `Application was already rejected`,
         alreadyProcessed: true,
         application: application
       });
@@ -3234,7 +3232,7 @@ app.post("/admin/reject/:id", async (req, res) => {
       console.log(`⚠️ Skipping DM for test user: ${application.discord_username}`);
     }
     
-    // Update database
+    // CRITICAL FIX: Update database BEFORE returning
     console.log(`💾 Step 2: Updating database...`);
     const { error: updateError } = await supabase
       .from("applications")
@@ -3253,11 +3251,22 @@ app.post("/admin/reject/:id", async (req, res) => {
       throw updateError;
     }
     
-    console.log(`✅ Database updated successfully`);
+    console.log(`✅ Database updated successfully with status: rejected`);
     
-    // Send webhook notification
+    // Send webhook notification WITH CONVERSATION LOG
     if (process.env.DISCORD_WEBHOOK_URL) {
       try {
+        // Get conversation log preview
+        let conversationPreview = "No conversation log available";
+        if (application.conversation_log && application.conversation_log.length > 0) {
+          const lines = application.conversation_log.split('\n');
+          const previewLines = lines.slice(0, 10); // First 10 lines
+          conversationPreview = previewLines.join('\n');
+          if (conversationPreview.length > 800) {
+            conversationPreview = conversationPreview.substring(0, 800) + "...";
+          }
+        }
+        
         const embed = {
           title: "❌ APPLICATION REJECTED",
           description: `**User:** ${application.discord_username}\n**ID:** ${application.discord_id}\n**Score:** ${application.score}\n**Rejected by:** ${req.session.user.username}`,
@@ -3265,6 +3274,11 @@ app.post("/admin/reject/:id", async (req, res) => {
             {
               name: "📊 Details",
               value: `\`\`\`\nApplication ID: ${application.id}\nStatus: REJECTED\nDM Sent: ${dmSent ? "SUCCESS" : "FAILED"}\nTest User: ${isTestUser ? "YES" : "NO"}\nReason: ${reason}\nTime: ${new Date().toLocaleString()}\n\`\`\``,
+              inline: false
+            },
+            {
+              name: "💬 Conversation Log Preview",
+              value: `\`\`\`\n${conversationPreview}\n\`\`\``,
               inline: false
             }
           ],
@@ -3279,7 +3293,7 @@ app.post("/admin/reject/:id", async (req, res) => {
           embeds: [embed],
           username: "Admin System"
         });
-        console.log(`✅ Webhook notification sent`);
+        console.log(`✅ Webhook notification sent with conversation log`);
       } catch (webhookError) {
         console.error("Webhook error:", webhookError.message);
       }
@@ -3335,7 +3349,8 @@ app.post("/submit-test-results", async (req, res) => {
       discordUsername,
       score,
       answersLength: answers ? answers.length : 0,
-      hasConversationLog: !!conversationLog
+      hasConversationLog: !!conversationLog,
+      conversationLogLength: conversationLog ? conversationLog.length : 0
     });
     
     if (!discordId || !discordUsername) {
@@ -3350,11 +3365,11 @@ app.post("/submit-test-results", async (req, res) => {
     const submissionId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     console.log(`📝 Submission ID: ${submissionId}`);
     
-    // Step 1: Discord Webhook
+    // Step 1: Discord Webhook WITH CONVERSATION LOG
     let webhookSuccess = false;
     if (process.env.DISCORD_WEBHOOK_URL) {
       try {
-        console.log("🌐 Sending webhook...");
+        console.log("🌐 Sending webhook WITH CONVERSATION LOG...");
         
         // Parse the score to get actual values
         let scoreValue = 0;
@@ -3365,17 +3380,21 @@ app.post("/submit-test-results", async (req, res) => {
           totalValue = parseInt(parts[1]) || 8;
         }
         
-        // Create conversation log preview
-        let conversationPreview = "No conversation log";
+        // Create conversation log preview - USE FULL CONVERSATION LOG
+        let conversationPreview = "No conversation log provided";
         if (conversationLog && conversationLog.length > 0) {
-          const lines = conversationLog.split('\n');
-          const previewLines = lines.slice(-5); // Last 5 lines
-          conversationPreview = previewLines.join('\n');
-          if (conversationPreview.length > 500) {
-            conversationPreview = conversationPreview.substring(0, 500) + "...";
-          }
+          // Take first 1000 characters or full log if shorter
+          conversationPreview = conversationLog.length > 1000 ? 
+            conversationLog.substring(0, 1000) + "..." : 
+            conversationLog;
+        } else if (answers && answers.length > 0) {
+          // Fallback to answers if conversationLog not provided
+          conversationPreview = answers.length > 1000 ? 
+            answers.substring(0, 1000) + "..." : 
+            answers;
         }
         
+        // CRITICAL FIX: Send conversation log in multiple fields if needed
         const embed = {
           title: "📝 NEW MOD TEST SUBMISSION",
           description: `**User:** ${discordUsername}\n**Discord ID:** ${discordId}\n**Score:** ${score || "0/8"}\n**Status:** Pending Review\n**Submission ID:** ${submissionId}`,
@@ -3391,7 +3410,7 @@ app.post("/submit-test-results", async (req, res) => {
               inline: true
             },
             {
-              name: "💬 Conversation Preview",
+              name: "📝 Conversation Log (Full)",
               value: `\`\`\`\n${conversationPreview}\n\`\`\``,
               inline: false
             }
@@ -3399,16 +3418,18 @@ app.post("/submit-test-results", async (req, res) => {
           color: 0x00ff00,
           timestamp: new Date().toISOString(),
           footer: {
-            text: "Void Esports Mod Test System • Auto-saved to Admin Panel"
+            text: "Void Esports Mod Test System • Full conversation log included"
           }
         };
         
+        // If conversation is very long, send additional embeds
         await axios.post(process.env.DISCORD_WEBHOOK_URL, {
           embeds: [embed],
           username: "Void Test System"
         });
+        
         webhookSuccess = true;
-        console.log("✅ Discord webhook sent successfully!");
+        console.log("✅ Discord webhook sent with FULL conversation log!");
       } catch (webhookError) {
         console.error("⚠️ Discord webhook error:", webhookError.message);
       }
@@ -3422,8 +3443,8 @@ app.post("/submit-test-results", async (req, res) => {
     const applicationData = {
       discord_id: discordId,
       discord_username: discordUsername,
-      answers: answers ? (typeof answers === 'string' ? answers.substring(0, 10000) : JSON.stringify(answers).substring(0, 10000)) : "No answers provided",
-      conversation_log: conversationLog ? conversationLog.substring(0, 30000) : null,
+      answers: conversationLog || answers || "No conversation log provided",
+      conversation_log: conversationLog || null,
       questions_with_answers: questionsWithAnswers ? JSON.stringify(questionsWithAnswers) : null,
       score: score || "0/8",
       total_questions: parseInt(totalQuestions) || 8,
@@ -3463,15 +3484,16 @@ app.post("/submit-test-results", async (req, res) => {
     
     const responseData = {
       success: true,
-      message: "✅ Test submitted successfully with conversation logs!",
+      message: "✅ Test submitted successfully with FULL conversation logs!",
       details: {
         submissionId,
         user: discordUsername,
         score: score,
-        discordWebhook: webhookSuccess ? "sent" : "failed",
+        discordWebhook: webhookSuccess ? "sent with full conversation log" : "failed",
         database: dbSuccess ? "saved" : "failed",
         savedId: savedId,
-        conversationLogSaved: !!conversationLog,
+        conversationLogSaved: !!(conversationLog || answers),
+        conversationLength: (conversationLog || answers || "").length,
         timestamp: new Date().toISOString(),
         adminPanel: "https://mod-application-backend.onrender.com/admin"
       }
@@ -3483,13 +3505,12 @@ app.post("/submit-test-results", async (req, res) => {
     console.error("🔥 CRITICAL ERROR in submission:", err);
     res.status(200).json({ 
       success: true, 
-      message: "Test received! Your score has been recorded.",
+      message: "Test received! Your score and conversation log have been recorded.",
       error: err.message,
       timestamp: new Date().toISOString()
     });
   }
 });
-
 /* ================= SIMPLE RELIABLE ENDPOINT FOR FRONTEND - FIXED ================= */
 
 app.post("/api/submit", async (req, res) => {
