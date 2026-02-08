@@ -3078,12 +3078,12 @@ app.post("/admin/accept/:id", async (req, res) => {
       updateData.notes = `ROLE ASSIGNMENT FAILED: ${roleResult.error || 'Unknown error'}`;
     }
     
-    const { error: updateError } = await supabase
+    const { error: statusupdateError } = await supabase
       .from("applications")
       .update(updateData)
       .eq("id", req.params.id);
     
-    if (updateError) {
+    if (statusupdateError) {
       console.error("Database update error:", updateError);
       throw updateError;
     }
@@ -3140,14 +3140,14 @@ app.post("/admin/accept/:id", async (req, res) => {
         console.error("Webhook error:", webhookError.message);
       }
     }
-    const { error: updateError } = await supabase
+    const { error: statusupdateError } = await supabase
         .from("applications")
         .update({
             status: "accepted",
             processed_at: new Date().toISOString()
         })
         .eq("id", applicationId);
-    if (updateError) {
+    if (statusupdateError) {
         console.error("DB UPDATE ERROR (ACCEPT):", updateError);
         return res.json({
             success: false,
