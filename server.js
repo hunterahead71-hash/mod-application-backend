@@ -23,11 +23,11 @@ console.log("🤖 Initializing Discord bot...");
 const bot = new Client({
   intents: [
     GatewayIntentBits.Guilds, 
-    GatewayIntentBits.GuildMembers,      // Requires SERVER MEMBERS INTENT in Discord Dev Portal
-    GatewayIntentBits.GuildMessages,     // Basic message reading
-    GatewayIntentBits.MessageContent,    // Requires MESSAGE CONTENT INTENT in Discord Dev Portal
-    GatewayIntentBits.DirectMessages,    // For sending DMs
-    GatewayIntentBits.GuildPresences     // For member presence
+    GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildPresences
   ],
   partials: ['CHANNEL', 'GUILD_MEMBER', 'MESSAGE', 'REACTION', 'USER']
 });
@@ -1904,19 +1904,7 @@ app.post("/admin/accept/:id", async (req, res) => {
     });
   }
 });
-app.post("/admin/reject/:id", async (req, res) => {
-  console.log(`\n🔴 REJECT ENDPOINT CALLED`);
-  console.log(`   Requested ID: ${req.params.id}`);
-  console.log(`   Type: ${typeof req.params.id}`);
-  
-  // Test database connection
-  const { count, error: countError } = await supabase
-    .from("applications")
-    .select('*', { count: 'exact', head: true });
-  
-  console.log(`   Total apps in DB: ${count}`);
-  
-  // Continue with your existing code...
+
 app.post("/admin/reject/:id", async (req, res) => {
   try {
     console.log(`\n🔴 ========== REJECTING APPLICATION ${req.params.id} ==========`);
