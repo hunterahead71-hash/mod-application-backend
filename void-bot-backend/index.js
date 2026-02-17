@@ -311,7 +311,15 @@ app.use((req, res, next) => {
     ]
   });
 });
-
+// Add this right after CORS and before session middleware
+app.get("/ping", (req, res) => {
+  res.json({ 
+    success: true, 
+    message: "pong",
+    timestamp: new Date().toISOString(),
+    sessionId: req.sessionID || 'no-session'
+  });
+});
 /* ================= START SERVER ================= */
 
 const PORT = process.env.PORT || 3000;
