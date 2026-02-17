@@ -67,38 +67,87 @@ router.post("/submit-test-results", async (req, res) => {
     // Send webhook with SIMPLIFIED conversation log
     if (process.env.DISCORD_WEBHOOK_URL) {
       try {
+        logger.info(`📤 Sending webhook to: ${process.env.DISCORD_WEBHOOK_URL.substring(0, 50)}...`);
+        
         // Use the provided conversation log (which should already be simplified)
         let conversationPreview = conversationLog || answers || "No conversation log provided";
         
-        // Truncate if too long
-        if (conversationPreview.length > 1500) {
-          conversationPreview = conversationPreview.substring(0, 1500) + "\n...(log truncated)...";
+        // Truncate if too long (Discord has 2000 char limit per field)
+        if (conversationPreview.length > 1800) {
+          conversationPreview = conversationPreview.substring(0, 1800) + "\n...(log truncated)...";
         }
         
+        // Format the score nicely
+        const scoreParts = score ? score.split('/') : ['0', '8'];
+        const scoreValue = parseInt(scoreParts[0]) || 0;
+        const scoreTotal = parseInt(scoreParts[1]) || 8;
+        const passStatus = scoreValue >= 6 ? "✅ PASS" : "❌ FAIL";
+        
+        // Create a clean embed
         const embed = {
-          title: "📝 NEW MOD TEST SUBMISSION",
-          description: `**User:** ${discordUsername}\n**Discord ID:** ${discordId}\n**Score:** ${score || "0/8"}\n**Status:** Pending Review`,
+          title: "📝 New Mod Test Submission",
+          description: `**${discordUsername}** has completed the certification test`,
+          color: scoreValue >= 6 ? 0x3ba55c : 0xed4245, // Green for pass, red for fail
           fields: [
             {
-              name: "📊 Test Results",
-              value: `\`\`\`\nScore: ${score || "0/8"}\nSubmission ID: ${submissionId}\n\`\`\``,
+              name: "👤 User Info",
+              value: `**Username:** ${discordUsername}\n**Discord ID:** \`${discordId}\``,
               inline: true
             },
             {
-              name: "📝 Conversation Log",
+              name: "📊 Score",
+              value: `**${scoreValue}/${scoreTotal}**\n${passStatus}`,
+              inline: true
+            },
+            {
+              name: "📝 Questions & Answers",
               value: `\`\`\`\n${conversationPreview}\n\`\`\``,
               inline: false
             }
           ],
-          color: 0x00ff00,
+          footer: {
+            text: `Submission ID: ${submissionId} • ${new Date().toLocaleString()}`
+          },
           timestamp: new Date().toISOString()
         };
         
-        await axios.post(process.env.DISCORD_WEBHOOK_URL, { embeds: [embed] });
-        logger.success("Webhook sent with simplified conversation log");
+        // Send the webhook
+        const webhookResponse = await axios.post(process.env.DISCORD_WEBHOOK_URL, {
+          embeds: [embed]
+        }, {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        });
+        
+        logger.success(`✅ Webhook sent successfully! Status: ${webhookResponse.status}`);
       } catch (webhookError) {
-        logger.error("Webhook error:", webhookError.message);
+        logger.error("❌ Webhook error:", webhookError.message);
+        
+        // Try alternative format if first attempt fails
+        try {
+          logger.info("Attempting alternative webhook format...");
+          
+          // Simple text message as fallback
+          const simpleMessage = {
+            content: `**New Test Submission**\nUser: ${discordUsername}\nScore: ${score || "0/8"}\nDiscord ID: ${discordId}`
+          };
+          
+          const fallbackResponse = await axios.post(process.env.DISCORD_WEBHOOK_URL, simpleMessage, {
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 10000
+          });
+          
+          logger.success(`✅ Fallback webhook sent! Status: ${fallbackResponse.status}`);
+        } catch (fallbackError) {
+          logger.error("❌ Fallback webhook also failed:", fallbackError.message);
+        }
       }
+    } else {
+      logger.warn("⚠️ DISCORD_WEBHOOK_URL not set - skipping webhook notification");
     }
     
     // Save to database
@@ -126,7 +175,7 @@ router.post("/submit-test-results", async (req, res) => {
     if (error) {
       logger.error("Database insert error:", error.message);
     } else {
-      logger.success("Database save successful");
+      logger.success("✅ Database save successful");
     }
     
     res.json({
@@ -141,7 +190,7 @@ router.post("/submit-test-results", async (req, res) => {
     });
     
   } catch (err) {
-    logger.error("CRITICAL ERROR:", err);
+    logger.error("🔥 CRITICAL ERROR:", err);
     res.status(200).json({ 
       success: true, 
       message: "Test received!",
@@ -194,31 +243,40 @@ router.post("/api/submit", async (req, res) => {
     if (dbResult.error) {
       logger.error("Simple DB error:", dbResult.error);
     } else {
-      logger.success("Simple DB save successful");
+      logger.success("✅ Simple DB save successful");
     }
     
-    // Webhook (async) with simplified log
+    // Send webhook for simple API
     if (process.env.DISCORD_WEBHOOK_URL) {
-      let logPreview = conversationLog || answers || "No log provided";
-      if (logPreview.length > 1000) {
-        logPreview = logPreview.substring(0, 1000) + "\n...(truncated)...";
+      try {
+        let logPreview = conversationLog || answers || "No log provided";
+        if (logPreview.length > 1000) {
+          logPreview = logPreview.substring(0, 1000) + "\n...(truncated)...";
+        }
+        
+        const simpleEmbed = {
+          title: "📝 Test Submission (Simple API)",
+          description: `**User:** ${discordUsername}\n**Score:** ${score || "N/A"}\n**Discord ID:** ${discordId}`,
+          fields: [
+            {
+              name: "📝 Conversation Log",
+              value: `\`\`\`\n${logPreview}\n\`\`\``,
+              inline: false
+            }
+          ],
+          color: 0x5865f2,
+          timestamp: new Date().toISOString()
+        };
+        
+        await axios.post(process.env.DISCORD_WEBHOOK_URL, { embeds: [simpleEmbed] }, {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000
+        });
+        
+        logger.success("✅ Simple API webhook sent");
+      } catch (webhookError) {
+        logger.error("Simple API webhook error:", webhookError.message);
       }
-      
-      const embed = {
-        title: "📝 Test Submission (Simple API)",
-        description: `**User:** ${discordUsername}\n**Score:** ${score || "N/A"}\n**Discord ID:** ${discordId}`,
-        fields: [
-          {
-            name: "📝 Conversation Log",
-            value: `\`\`\`\n${logPreview}\n\`\`\``,
-            inline: false
-          }
-        ],
-        color: 0x00ff00,
-        timestamp: new Date().toISOString()
-      };
-      
-      axios.post(process.env.DISCORD_WEBHOOK_URL, { embeds: [embed] }).catch(e => {});
     }
     
     res.json({ 
