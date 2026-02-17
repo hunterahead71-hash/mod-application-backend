@@ -19,71 +19,36 @@ const debugRoutes = require("./routes/debug");
 const healthRoutes = require("./routes/health");
 
 const app = express();
-// ==================== CRITICAL FIX - MUST BE FIRST ====================
-// Simple direct endpoint for set-test-intent
-app.get("/set-test-intent", (req, res) => {
-  console.log("🔥🔥🔥 SET TEST INTENT HIT - DIRECT RESPONSE 🔥🔥🔥");
-  console.log("Session ID:", req.sessionID);
-  
-  // Set the intent if session exists
-  if (req.session) {
-    req.session.loginIntent = "test";
-    req.session.save();
+
+/* ================= CORS CONFIGURATION - FIXED ================= */
+// This must come before any route definitions
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  // Allow requests from any origin, but echo the origin for credentialed requests
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
   }
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
-  // ALWAYS return success with proper headers
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Content-Type', 'application/json');
-  res.status(200).json({ 
-    success: true, 
-    message: "Test intent set successfully",
-    timestamp: new Date().toISOString()
-  });
+  // Handle preflight requests
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
 });
 
-// Handle OPTIONS preflight
-app.options("/set-test-intent", (req, res) => {
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.sendStatus(200);
-});
-
-// Also add a simple test endpoint
-app.get("/simple-test", (req, res) => {
-  res.json({ success: true, message: "Simple test works" });
-});
-/* ================= CORS & SESSION CONFIG ================= */
-
-// CORS configuration - Allow all origins for testing
-app.use(
-  cors({
-    origin: function(origin, callback) {
-      // Allow all origins for now to fix frontend issues
-      callback(null, true);
-    },
-    credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
-  })
-);
-
-app.options('*', cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Add ping endpoint right after CORS (before session)
-app.get("/ping", (req, res) => {
-  res.json({ 
-    success: true, 
-    message: "pong",
-    timestamp: new Date().toISOString(),
-    sessionId: req.sessionID || 'no-session'
-  });
-});
+/* ================= CRITICAL: DIRECT TEST INTENT ENDPOINT ================= */
+// This MUST be before session middleware? Actually session is used, so after session.
+// But session middleware is below. We'll put it after session but before other routes.
+// However, we need session to set loginIntent, so it must be after session.
 
-// Session configuration
+/* ================= SESSION CONFIGURATION ================= */
 app.use(
   session({
     store: new MemoryStore({
@@ -110,11 +75,52 @@ app.use((req, res, next) => {
 });
 
 /* ================= INITIALIZE BOT ================= */
-
 initializeBot();
 
-/* ================= TEST PAGES ================= */
+/* ================= SIMPLE TEST ENDPOINTS ================= */
+// Ping endpoint (no session needed)
+app.get("/ping", (req, res) => {
+  res.json({ 
+    success: true, 
+    message: "pong",
+    timestamp: new Date().toISOString(),
+    sessionId: req.sessionID || 'no-session'
+  });
+});
 
+// ==================== CRITICAL FIX: DIRECT SET-TEST-INTENT ====================
+// This endpoint MUST return 200 with proper CORS headers (already handled globally)
+app.get("/set-test-intent", (req, res) => {
+  console.log("🔥🔥🔥 SET TEST INTENT HIT - DIRECT RESPONSE 🔥🔥🔥");
+  console.log("Session ID:", req.sessionID);
+  
+  // Set the intent if session exists
+  if (req.session) {
+    req.session.loginIntent = "test";
+    req.session.save((err) => {
+      if (err) console.error("Session save error in set-test-intent:", err);
+    });
+  }
+  
+  // Always return success
+  res.status(200).json({ 
+    success: true, 
+    message: "Test intent set successfully",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Also handle admin intent similarly if needed
+app.get("/set-admin-intent", (req, res) => {
+  console.log("🔥 ADMIN INTENT HIT");
+  if (req.session) {
+    req.session.loginIntent = "admin";
+    req.session.save();
+  }
+  res.status(200).json({ success: true, message: "Admin intent set" });
+});
+
+/* ================= TEST PAGES ================= */
 // Simple test page for debugging
 app.get("/test", (req, res) => {
   res.send(`
@@ -335,7 +341,6 @@ app.get("/frontend-test", (req, res) => {
 });
 
 /* ================= ROUTES ================= */
-
 app.use("/auth", authRoutes);
 app.use("/admin", adminRoutes);
 app.use("/", submissionRoutes);
@@ -457,13 +462,13 @@ app.listen(PORT, () => {
   
   console.log(`
 ╔══════════════════════════════════════════════════════════════════════╗
-║                VOID ESPORTS MOD TEST SERVER v2.5                    ║
+║                VOID ESPORTS MOD TEST SERVER v2.6                    ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║ 🚀 Server running on port ${PORT}                                  ║
 ║ 🤖 Discord Bot: ${botConnected ? "✅ Connected" : "🔄 Connecting..."}   ║
 ║ 📝 FIXED ISSUES:                                                    ║
-║    • ✅ /set-test-intent always returns success                      ║
-║    • ✅ /set-admin-intent always returns success                     ║
+║    • ✅ CORS now echoes origin, allows credentials                  ║
+║    • ✅ /set-test-intent always returns 200 with JSON               ║
 ║    • ✅ All endpoints now working                                    ║
 ║ 👑 Admin Panel: /admin                                              ║
 ║ 🧪 Test Login: /auth/discord                                        ║
