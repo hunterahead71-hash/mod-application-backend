@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActivityType } = require("discord.js");
+const { Client, GatewayIntentBits, ActivityType, Partials } = require("discord.js");
 const { logger } = require("../utils/logger");
 
 let bot = null;
@@ -15,7 +15,13 @@ function createBot() {
       GatewayIntentBits.DirectMessages,
       GatewayIntentBits.GuildPresences
     ],
-    partials: ['CHANNEL', 'GUILD_MEMBER', 'MESSAGE', 'REACTION', 'USER']
+    partials: [
+      Partials.Channel, 
+      Partials.GuildMember, 
+      Partials.Message, 
+      Partials.Reaction, 
+      Partials.User
+    ]
   });
 }
 
@@ -24,7 +30,13 @@ function setupBotEvents(bot) {
     botReady = true;
     botLoginAttempts = 0;
     
-    logger.botReady(bot.user.tag, bot.guilds.cache.size);
+    logger.success(`Discord bot ready as ${bot.user.tag}`);
+    logger.info(`📊 Servers: ${bot.guilds.cache.size}`);
+    
+    // Log all servers for debugging
+    bot.guilds.cache.forEach(guild => {
+      logger.info(`   - ${guild.name} (${guild.id})`);
+    });
     
     // Set bot status
     bot.user.setPresence({
@@ -41,57 +53,66 @@ function setupBotEvents(bot) {
         const guild = await bot.guilds.fetch(process.env.DISCORD_GUILD_ID);
         const botMember = await guild.members.fetch(bot.user.id);
         
-        logger.botPermissions(botMember, guild, process.env.MOD_ROLE_ID);
+        logger.info("🔍 Bot Permissions Check:");
+        logger.info(`   - Manage Roles: ${botMember.permissions.has('ManageRoles') ? '✅' : '❌'}`);
+        logger.info(`   - Send Messages: ${botMember.permissions.has('SendMessages') ? '✅' : '❌'}`);
+        logger.info(`   - Read Messages: ${botMember.permissions.has('ViewChannel') ? '✅' : '❌'}`);
+        
+        if (process.env.MOD_ROLE_ID) {
+          const modRole = guild.roles.cache.get(process.env.MOD_ROLE_ID);
+          logger.info(`   - Mod Role Found: ${modRole ? `✅ ${modRole.name}` : '❌ Not Found'}`);
+          
+          if (modRole) {
+            logger.info(`   - Role Position: ${modRole.position}`);
+            logger.info(`   - Bot's Highest Role Position: ${botMember.roles.highest.position}`);
+            
+            if (modRole.position >= botMember.roles.highest.position) {
+              logger.warn(`⚠️  WARNING: Mod role is higher than bot's highest role! Bot cannot assign this role.`);
+            }
+          }
+        }
       } catch (error) {
-        logger.error("Error checking bot permissions:", error.message);
+        logger.error("❌ Error checking bot permissions:", error.message);
       }
     }
   });
 
   bot.on('error', (error) => {
-    logger.error('Discord bot error:', error.message);
+    logger.error('❌ Discord bot error:', error.message);
   });
 
   bot.on('warn', (warning) => {
-    logger.warn('Discord bot warning:', warning);
-  });
-
-  bot.on('guildMemberAdd', async (member) => {
-    logger.info(`New member joined: ${member.user.tag}`);
+    logger.warn('⚠️ Discord bot warning:', warning);
   });
 }
 
 async function loginBot() {
-  logger.info("Attempting bot login...");
+  logger.info("🔐 Attempting bot login...");
   
   if (!process.env.DISCORD_BOT_TOKEN) {
-    logger.error("CRITICAL: DISCORD_BOT_TOKEN not set!");
-    logger.info("Add to Render.com: DISCORD_BOT_TOKEN=your_token_here");
+    logger.error("❌ CRITICAL: DISCORD_BOT_TOKEN not set!");
     return false;
   }
   
   const token = process.env.DISCORD_BOT_TOKEN;
   
   if (!token.startsWith("MT") && !token.startsWith("NT") && !token.startsWith("Mz")) {
-    logger.error("Invalid token format! Should start with 'MT', 'NT', or 'Mz'");
+    logger.error("❌ Invalid token format! Should start with 'MT', 'NT', or 'Mz'");
     return false;
   }
   
   try {
     await bot.login(token);
     botReady = true;
-    logger.success("Bot login successful!");
+    logger.success("✅ Bot login successful!");
     return true;
   } catch (error) {
-    logger.error("Bot login failed:", error.message);
+    logger.error("❌ Bot login failed:", error.message);
     
     if (error.message.includes("disallowed intents")) {
-      logger.info("FIX: Go to Discord Developer Portal → Bot → Enable:");
+      logger.info("💡 FIX: Go to Discord Developer Portal → Bot → Enable:");
       logger.info("   - SERVER MEMBERS INTENT (REQUIRED)");
       logger.info("   - MESSAGE CONTENT INTENT (REQUIRED)");
-      logger.info("   - PRESENCE INTENT (optional)");
-    } else if (error.message.includes("Incorrect login details")) {
-      logger.info("Token is invalid. Reset in Discord Developer Portal");
     }
     
     return false;
@@ -101,7 +122,7 @@ async function loginBot() {
 async function ensureBotReady() {
   if (botReady && bot.isReady()) return true;
   
-  logger.info("Bot not ready, attempting to reconnect...");
+  logger.info("🔄 Bot not ready, attempting to reconnect...");
   
   if (!bot.isReady() && process.env.DISCORD_BOT_TOKEN) {
     const success = await loginBot();
@@ -116,20 +137,20 @@ async function ensureBotReady() {
 
 async function startBotWithRetry() {
   if (!process.env.DISCORD_BOT_TOKEN) {
-    logger.warn("DISCORD_BOT_TOKEN not set - bot features disabled");
+    logger.warn("⚠️ DISCORD_BOT_TOKEN not set - bot features disabled");
     return;
   }
   
-  logger.info("Starting Discord bot...");
+  logger.info("🤖 Starting Discord bot...");
   botLoginAttempts++;
   
   try {
     await loginBot();
   } catch (error) {
-    logger.error(`Bot startup failed (attempt ${botLoginAttempts}):`, error.message);
+    logger.error(`❌ Bot startup failed (attempt ${botLoginAttempts}):`, error.message);
     
     if (botLoginAttempts < 3) {
-      logger.info(`Retrying in 10 seconds...`);
+      logger.info(`⏳ Retrying in 10 seconds...`);
       setTimeout(startBotWithRetry, 10000);
     }
   }
