@@ -34,10 +34,10 @@ router.options("/api/start-test", (req, res) => {
   res.sendStatus(200);
 });
 
-// ==================== ULTIMATE SUBMISSION ENDPOINT ====================
+// ==================== SIMPLIFIED SUBMISSION ENDPOINT ====================
 
 router.post("/submit-test-results", async (req, res) => {
-  logger.info("🚀 ENHANCED SUBMISSION ENDPOINT CALLED");
+  logger.info("🚀 SUBMISSION ENDPOINT CALLED");
   
   try {
     const { 
@@ -64,14 +64,15 @@ router.post("/submit-test-results", async (req, res) => {
     
     const submissionId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
-    // Send webhook
+    // Send webhook with SIMPLIFIED conversation log
     if (process.env.DISCORD_WEBHOOK_URL) {
       try {
-        let conversationPreview = "No conversation log provided";
-        if (conversationLog && conversationLog.length > 0) {
-          conversationPreview = conversationLog.length > 1000 ? 
-            conversationLog.substring(0, 1000) + "..." : 
-            conversationLog;
+        // Use the provided conversation log (which should already be simplified)
+        let conversationPreview = conversationLog || answers || "No conversation log provided";
+        
+        // Truncate if too long
+        if (conversationPreview.length > 1500) {
+          conversationPreview = conversationPreview.substring(0, 1500) + "\n...(log truncated)...";
         }
         
         const embed = {
@@ -94,7 +95,7 @@ router.post("/submit-test-results", async (req, res) => {
         };
         
         await axios.post(process.env.DISCORD_WEBHOOK_URL, { embeds: [embed] });
-        logger.success("Webhook sent");
+        logger.success("Webhook sent with simplified conversation log");
       } catch (webhookError) {
         logger.error("Webhook error:", webhookError.message);
       }
@@ -196,11 +197,23 @@ router.post("/api/submit", async (req, res) => {
       logger.success("Simple DB save successful");
     }
     
-    // Webhook (async)
+    // Webhook (async) with simplified log
     if (process.env.DISCORD_WEBHOOK_URL) {
+      let logPreview = conversationLog || answers || "No log provided";
+      if (logPreview.length > 1000) {
+        logPreview = logPreview.substring(0, 1000) + "\n...(truncated)...";
+      }
+      
       const embed = {
         title: "📝 Test Submission (Simple API)",
         description: `**User:** ${discordUsername}\n**Score:** ${score || "N/A"}\n**Discord ID:** ${discordId}`,
+        fields: [
+          {
+            name: "📝 Conversation Log",
+            value: `\`\`\`\n${logPreview}\n\`\`\``,
+            inline: false
+          }
+        ],
         color: 0x00ff00,
         timestamp: new Date().toISOString()
       };
