@@ -2,108 +2,111 @@ const express = require("express");
 const axios = require("axios");
 const { logger } = require("../utils/logger");
 const { checkAuthRateLimit, authRateLimiter } = require("../utils/helpers");
-const { isTestUser } = require("../utils/helpers");
 
 const router = express.Router();
 
 // Store intents in memory
 const pendingIntents = new Map();
-// Add these at the top of routes/auth.js
+
+// ==================== INTENT ENDPOINTS (MUST BE FIRST) ====================
+
 router.get("/set-test-intent", (req, res) => {
-  console.log("Setting test intent...");
-  req.session.loginIntent = "test";
+  console.log("\n🔵 SET TEST INTENT CALLED");
+  console.log("Session ID:", req.sessionID);
   
-  // Store in memory as backup
-  const pendingIntents = new Map();
-  pendingIntents.set(req.sessionID, {
-    intent: "test",
-    timestamp: Date.now()
-  });
-  
-  req.session.save((err) => {
-    if (err) {
-      console.error("Session save error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json({ 
-      success: true, 
-      message: "Test intent set",
-      loginIntent: req.session.loginIntent,
-      sessionId: req.sessionID
+  try {
+    req.session.loginIntent = "test";
+    
+    pendingIntents.set(req.sessionID, {
+      intent: "test",
+      timestamp: Date.now()
     });
-  });
+    
+    req.session.save((err) => {
+      if (err) {
+        console.error("Session save error:", err);
+        return res.status(500).json({ 
+          success: false, 
+          error: err.message 
+        });
+      }
+      
+      console.log("✅ Test intent set successfully");
+      
+      res.json({ 
+        success: true, 
+        message: "Test intent set",
+        loginIntent: "test",
+        sessionId: req.sessionID
+      });
+    });
+  } catch (error) {
+    console.error("Error in set-test-intent:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
 });
 
 router.get("/set-admin-intent", (req, res) => {
-  console.log("Setting admin intent...");
-  req.session.loginIntent = "admin";
+  console.log("\n🔵 SET ADMIN INTENT CALLED");
+  console.log("Session ID:", req.sessionID);
   
-  // Store in memory as backup
-  const pendingIntents = new Map();
-  pendingIntents.set(req.sessionID, {
-    intent: "admin",
-    timestamp: Date.now()
-  });
-  
-  req.session.save((err) => {
-    if (err) {
-      console.error("Session save error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json({ 
-      success: true, 
-      message: "Admin intent set",
-      loginIntent: req.session.loginIntent,
-      sessionId: req.sessionID
+  try {
+    req.session.loginIntent = "admin";
+    
+    pendingIntents.set(req.sessionID, {
+      intent: "admin",
+      timestamp: Date.now()
     });
-  });
-});
-// Test intent endpoints
-router.get("/set-test-intent", (req, res) => {
-  logger.info("Setting test intent...");
-  req.session.loginIntent = "test";
-  pendingIntents.set(req.sessionID, {
-    intent: "test",
-    timestamp: Date.now()
-  });
-  
-  req.session.save((err) => {
-    if (err) {
-      logger.error("Session save error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json({ 
-      success: true, 
-      message: "Test intent set",
-      loginIntent: req.session.loginIntent,
-      sessionId: req.sessionID
+    
+    req.session.save((err) => {
+      if (err) {
+        console.error("Session save error:", err);
+        return res.status(500).json({ 
+          success: false, 
+          error: err.message 
+        });
+      }
+      
+      console.log("✅ Admin intent set successfully");
+      
+      res.json({ 
+        success: true, 
+        message: "Admin intent set",
+        loginIntent: "admin",
+        sessionId: req.sessionID
+      });
     });
-  });
+  } catch (error) {
+    console.error("Error in set-admin-intent:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
 });
 
-router.get("/set-admin-intent", (req, res) => {
-  logger.info("Setting admin intent...");
-  req.session.loginIntent = "admin";
-  pendingIntents.set(req.sessionID, {
-    intent: "admin",
-    timestamp: Date.now()
-  });
-  
-  req.session.save((err) => {
-    if (err) {
-      logger.error("Session save error:", err);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json({ 
-      success: true, 
-      message: "Admin intent set",
-      loginIntent: req.session.loginIntent,
-      sessionId: req.sessionID
-    });
-  });
+// OPTIONS handlers for CORS
+router.options("/set-test-intent", (req, res) => {
+  res.header('Access-Control-Allow-Origin', 'https://hunterahead71-hash.github.io');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.sendStatus(200);
 });
 
-// Discord auth routes
+router.options("/set-admin-intent", (req, res) => {
+  res.header('Access-Control-Allow-Origin', 'https://hunterahead71-hash.github.io');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.sendStatus(200);
+});
+
+// ==================== DISCORD AUTH ROUTES ====================
+
 router.get("/discord", checkAuthRateLimit, (req, res) => {
   logger.info("Discord auth initiated for TEST");
   
@@ -165,51 +168,20 @@ router.get("/discord/callback", checkAuthRateLimit, async (req, res) => {
     }
 
     // Get Discord token
-    let tokenRes;
-    try {
-      tokenRes = await axios.post(
-        "https://discord.com/api/oauth2/token",
-        new URLSearchParams({
-          client_id: process.env.DISCORD_CLIENT_ID,
-          client_secret: process.env.DISCORD_CLIENT_SECRET,
-          grant_type: "authorization_code",
-          code,
-          redirect_uri: process.env.REDIRECT_URI
-        }),
-        { 
-          headers: { "Content-Type": "application/x-www-form-urlencoded" },
-          timeout: 10000
-        }
-      );
-    } catch (error) {
-      logger.error("Discord token request failed:", error.message);
-      
-      if (error.response && error.response.status === 429) {
-        const retryAfter = error.response.headers['retry-after'] || 60;
-        return res.status(429).send(`
-          <!DOCTYPE html>
-          <html>
-          <head>
-              <title>Rate Limited by Discord</title>
-              <style>
-                  body { font-family: Arial; text-align: center; padding: 50px; background: #36393f; color: white; }
-                  h1 { color: #ff0033; }
-                  .info { background: #202225; padding: 30px; border-radius: 12px; margin: 30px auto; max-width: 600px; }
-              </style>
-          </head>
-          <body>
-              <h1>⚠️ Rate Limited by Discord</h1>
-              <div class="info">
-                  <p>Too many authentication attempts. Please wait ${retryAfter} seconds before trying again.</p>
-                  <p><a href="https://hunterahead71-hash.github.io/void.training/" style="color: #00ffea;">Return to Training</a></p>
-              </div>
-          </body>
-          </html>
-        `);
+    const tokenRes = await axios.post(
+      "https://discord.com/api/oauth2/token",
+      new URLSearchParams({
+        client_id: process.env.DISCORD_CLIENT_ID,
+        client_secret: process.env.DISCORD_CLIENT_SECRET,
+        grant_type: "authorization_code",
+        code,
+        redirect_uri: process.env.REDIRECT_URI
+      }),
+      { 
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        timeout: 10000
       }
-      
-      throw error;
-    }
+    );
 
     // Get user info
     const userRes = await axios.get(
