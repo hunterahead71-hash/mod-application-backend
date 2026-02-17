@@ -300,6 +300,8 @@ app.use((req, res, next) => {
       '/debug/bot/status',
       '/auth/discord',
       '/admin',
+      '/set-test-intent',  // Added this
+      '/set-admin-intent',
       '/api/start-test',
       '/api/submit',
       '/submit-test-results',
