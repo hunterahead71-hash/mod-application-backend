@@ -134,7 +134,28 @@ router.post("/bot/test-assign-role", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
-
+// Add this to routes/debug.js
+router.post("/bot/test-role-direct", async (req, res) => {
+  try {
+    const { userId, username } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ error: "User ID required" });
+    }
+    
+    logger.info(`Direct test role assignment for ${userId}`);
+    
+    const { assignModRole } = require("../utils/discordHelpers");
+    const result = await assignModRole(userId, username || "Test User");
+    
+    res.json({
+      success: true,
+      result
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 // Test DM
 router.post("/bot/test-dm", async (req, res) => {
   try {
