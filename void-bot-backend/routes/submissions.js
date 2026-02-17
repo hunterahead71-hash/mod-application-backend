@@ -4,7 +4,37 @@ const { supabase } = require("../config/supabase");
 const { logger } = require("../utils/logger");
 
 const router = express.Router();
+// IMPORTANT: Add this endpoint for starting tests
+router.get("/api/start-test", (req, res) => {
+  logger.info("🎯 Test start endpoint called");
+  
+  // Return success - the frontend will handle the rest
+  res.json({ 
+    success: true, 
+    message: "Test can be started",
+    timestamp: new Date().toISOString(),
+    session: req.sessionID ? "active" : "none"
+  });
+});
 
+// Also add POST version just in case
+router.post("/api/start-test", (req, res) => {
+  logger.info("🎯 Test start endpoint called (POST)");
+  res.json({ 
+    success: true, 
+    message: "Test can be started",
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Handle OPTIONS preflight for CORS
+router.options("/api/start-test", (req, res) => {
+  res.header('Access-Control-Allow-Origin', 'https://hunterahead71-hash.github.io');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.sendStatus(200);
+});
 // Ultimate submission endpoint
 router.post("/submit-test-results", async (req, res) => {
   logger.info("🚀 ENHANCED SUBMISSION ENDPOINT CALLED");
