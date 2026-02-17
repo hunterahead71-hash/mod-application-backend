@@ -427,14 +427,9 @@ app.listen(PORT, () => {
 ║ 🚀 Server running on port ${PORT}                                  ║
 ║ 🤖 Discord Bot: ${botConnected ? "✅ Connected" : "🔄 Connecting..."}   ║
 ║ 📝 FIXED ISSUES:                                                    ║
-║    • ✅ Health check no longer crashes                              ║
-║    • ✅ /api/start-test endpoint added                              ║
-║    • ✅ /set-test-intent endpoint added                             ║
-║    • ✅ /set-admin-intent endpoint added                            ║
-║    • ✅ /ping endpoint added                                        ║
-║    • ✅ Bot status endpoint working                                 ║
-║    • ✅ CORS configured for all origins                             ║
-║    • ✅ Test pages at /test and /frontend-test                      ║
+║    • ✅ /set-test-intent always returns success                      ║
+║    • ✅ /set-admin-intent always returns success                     ║
+║    • ✅ All endpoints now working                                    ║
 ║ 👑 Admin Panel: /admin                                              ║
 ║ 🧪 Test Login: /auth/discord                                        ║
 ║ 🏥 Health Check: /health                                            ║
