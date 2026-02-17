@@ -1,11 +1,17 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { bot, ensureBotReady } = require("../config/discord");
+const { getBot, ensureBotReady } = require("../config/discord");
 const { logger } = require("./logger");
 
 // Enhanced function to send DM to user
 async function sendDMToUser(discordId, title, description, color, footer = null) {
   try {
     logger.info(`📨 Attempting to send DM to ${discordId}: ${title}`);
+    
+    const bot = getBot();
+    if (!bot) {
+      logger.error("❌ Bot instance is null!");
+      return false;
+    }
     
     if (!await ensureBotReady()) {
       logger.warn("❌ Bot not ready for DM");
@@ -40,7 +46,7 @@ async function sendDMToUser(discordId, title, description, color, footer = null)
       
       if (dmError.code === 50007) {
         logger.info(`📵 User ${user.tag} has DMs disabled`);
-        return true; // Still return true since it's not a bot error
+        return true;
       }
       
       return false;
@@ -57,6 +63,12 @@ async function assignModRole(discordId, discordUsername = 'User') {
   logger.info(`   User: ${discordUsername} (${discordId})`);
   
   try {
+    const bot = getBot();
+    if (!bot) {
+      logger.error("❌ Bot instance is null! Make sure bot is initialized.");
+      return { success: false, error: "Bot not initialized" };
+    }
+    
     // 1. Check if bot is ready
     if (!await ensureBotReady()) {
       logger.error("❌ Bot is not ready/connected");
@@ -66,8 +78,6 @@ async function assignModRole(discordId, discordUsername = 'User') {
     // 2. Check if required environment variables exist
     if (!process.env.DISCORD_GUILD_ID || !process.env.MOD_ROLE_ID) {
       logger.error("❌ Missing environment variables");
-      logger.error(`   DISCORD_GUILD_ID: ${process.env.DISCORD_GUILD_ID ? "Set" : "NOT SET"}`);
-      logger.error(`   MOD_ROLE_ID: ${process.env.MOD_ROLE_ID ? "Set" : "NOT SET"}`);
       return { success: false, error: "Missing Discord configuration" };
     }
     
@@ -87,14 +97,14 @@ async function assignModRole(discordId, discordUsername = 'User') {
       return { success: false, error: `Guild not found. Bot might not be in this server.` };
     }
     
-    // 4. Fetch member (user in the guild)
+    // 4. Fetch member
     let member;
     try {
       member = await guild.members.fetch(discordId);
       logger.success(`✅ Found member: ${member.user.tag} (${member.id})`);
     } catch (memberError) {
       logger.error(`❌ Could not fetch member:`, memberError.message);
-      return { success: false, error: `User not found in the server. Make sure ${discordUsername} is in ${guild.name}.` };
+      return { success: false, error: `User not found in the server.` };
     }
     
     // 5. Fetch role
@@ -103,7 +113,7 @@ async function assignModRole(discordId, discordUsername = 'User') {
       role = await guild.roles.fetch(roleId);
       if (!role) {
         logger.error(`❌ Role ${roleId} not found`);
-        return { success: false, error: `Mod role not found. Check MOD_ROLE_ID environment variable.` };
+        return { success: false, error: `Mod role not found.` };
       }
       logger.success(`✅ Found role: ${role.name} (${role.id})`);
     } catch (roleError) {
@@ -113,8 +123,6 @@ async function assignModRole(discordId, discordUsername = 'User') {
     
     // 6. Check bot permissions
     const botMember = await guild.members.fetch(bot.user.id);
-    logger.info(`🔍 Bot member: ${botMember.user.tag}`);
-    logger.info(`🔍 Bot permissions:`, botMember.permissions.toArray());
     
     if (!botMember.permissions.has(PermissionsBitField.Flags.ManageRoles)) {
       logger.error("❌ Bot lacks ManageRoles permission");
@@ -124,11 +132,9 @@ async function assignModRole(discordId, discordUsername = 'User') {
     
     // 7. Check role hierarchy
     const botHighestRole = botMember.roles.highest;
-    logger.info(`🔍 Bot's highest role: ${botHighestRole.name} (position: ${botHighestRole.position})`);
-    logger.info(`🔍 Mod role position: ${role.position}`);
     
     if (role.position >= botHighestRole.position) {
-      logger.error("❌ Role hierarchy issue: Mod role is higher than or equal to bot's highest role");
+      logger.error("❌ Role hierarchy issue");
       return { success: false, error: "Role hierarchy issue. Bot's role must be higher than the mod role." };
     }
     logger.success("✅ Role hierarchy is valid");
@@ -146,38 +152,19 @@ async function assignModRole(discordId, discordUsername = 'User') {
       logger.success(`✅ SUCCESS: Assigned mod role to ${member.user.tag}`);
       
       // 10. Send welcome DM
-      logger.info(`📨 Attempting to send welcome DM...`);
       const dmSuccess = await sendDMToUser(
         discordId,
         '🎉 Welcome to the Void Esports Mod Team!',
         `Congratulations ${discordUsername}! Your moderator application has been **approved**.\n\n` +
-        `You have been granted the **${role.name}** role.\n\n` +
-        `**Next Steps:**\n` +
-        `1. Read #staff-rules-and-info\n` +
-        `2. Introduce yourself in #staff-introductions\n` +
-        `3. Join our next mod training session\n` +
-        `4. Start with ticket duty in #mod-tickets\n\n` +
-        `If you have any questions, ping @Senior Staff in #staff-chat.\n\n` +
-        `We're excited to have you on the team!`,
+        `You have been granted the **${role.name}** role.`,
         0x3ba55c,
         'Welcome to the Mod Team!'
       );
       
-      if (dmSuccess) {
-        logger.success(`✅ Welcome DM sent to ${member.user.tag}`);
-      } else {
-        logger.info(`⚠️ Could not send welcome DM (user may have DMs disabled)`);
-      }
-      
       return { 
         success: true, 
-        message: `Successfully assigned ${role.name} to ${member.user.tag}`,
-        dmSent: dmSuccess,
-        details: {
-          username: member.user.tag,
-          role: role.name,
-          guild: guild.name
-        }
+        message: `Successfully assigned ${role.name}`,
+        dmSent: dmSuccess
       };
       
     } catch (assignError) {
@@ -187,7 +174,6 @@ async function assignModRole(discordId, discordUsername = 'User') {
     
   } catch (error) {
     logger.error('❌ CRITICAL ERROR in assignModRole:', error.message);
-    logger.error('Stack trace:', error.stack);
     return { success: false, error: `Unexpected error: ${error.message}` };
   }
 }
@@ -203,9 +189,7 @@ async function sendRejectionDM(discordId, discordUsername, reason = "Not specifi
       `Hello ${discordUsername},\n\n` +
       `After careful review, your moderator application has **not been approved** at this time.\n\n` +
       `**Reason:** ${reason}\n\n` +
-      `**You can reapply in 30 days.**\n` +
-      `In the meantime, remain active in the community and consider improving your knowledge of our rules and procedures.\n\n` +
-      `Thank you for your interest in joining the Void Esports team!`,
+      `**You can reapply in 30 days.**`,
       0xed4245,
       'Better luck next time!'
     );
