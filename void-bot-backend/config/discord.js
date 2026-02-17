@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, ActivityType, Partials } = require("discord.js");
 const { logger } = require("../utils/logger");
 
-let bot = null;
+let botInstance = null;
 let botReady = false;
 let botLoginAttempts = 0;
 
@@ -96,13 +96,8 @@ async function loginBot() {
   
   const token = process.env.DISCORD_BOT_TOKEN;
   
-  if (!token.startsWith("MT") && !token.startsWith("NT") && !token.startsWith("Mz")) {
-    logger.error("❌ Invalid token format! Should start with 'MT', 'NT', or 'Mz'");
-    return false;
-  }
-  
   try {
-    await bot.login(token);
+    await botInstance.login(token);
     botReady = true;
     logger.success("✅ Bot login successful!");
     return true;
@@ -120,11 +115,16 @@ async function loginBot() {
 }
 
 async function ensureBotReady() {
-  if (botReady && bot.isReady()) return true;
+  if (!botInstance) {
+    logger.error("❌ Bot instance is null!");
+    return false;
+  }
+  
+  if (botReady && botInstance.isReady()) return true;
   
   logger.info("🔄 Bot not ready, attempting to reconnect...");
   
-  if (!bot.isReady() && process.env.DISCORD_BOT_TOKEN) {
+  if (!botInstance.isReady() && process.env.DISCORD_BOT_TOKEN) {
     const success = await loginBot();
     if (success) {
       botReady = true;
@@ -157,13 +157,15 @@ async function startBotWithRetry() {
 }
 
 function initializeBot() {
-  bot = createBot();
-  setupBotEvents(bot);
+  botInstance = createBot();
+  setupBotEvents(botInstance);
   startBotWithRetry();
 }
 
+// Export both the bot instance and the functions
 module.exports = { 
-  bot, 
+  bot: botInstance,  // This will be null initially but will be set after login
+  getBot: () => botInstance, // Helper function to get the current bot instance
   botReady, 
   ensureBotReady, 
   initializeBot 
