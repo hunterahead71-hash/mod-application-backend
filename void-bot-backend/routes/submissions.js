@@ -6,14 +6,12 @@ const { logger } = require("../utils/logger");
 const router = express.Router();
 
 // ==================== TEST START ENDPOINT ====================
-
 router.get("/api/start-test", (req, res) => {
   console.log("🎯 Test start endpoint called");
   res.json({ 
     success: true, 
     message: "Test can be started",
-    timestamp: new Date().toISOString(),
-    session: req.sessionID ? "active" : "none"
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -34,8 +32,7 @@ router.options("/api/start-test", (req, res) => {
   res.sendStatus(200);
 });
 
-// ==================== SIMPLIFIED SUBMISSION ENDPOINT ====================
-
+// ==================== MAIN SUBMISSION ENDPOINT ====================
 router.post("/submit-test-results", async (req, res) => {
   logger.info("🚀 SUBMISSION ENDPOINT CALLED");
   
@@ -65,15 +62,22 @@ router.post("/submit-test-results", async (req, res) => {
     
     const submissionId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     
+    // Parse test results if provided
+    let parsedTestResults = {};
+    try {
+      parsedTestResults = testResults ? JSON.parse(testResults) : {};
+    } catch (e) {
+      parsedTestResults = { raw: testResults };
+    }
+    
+    // Check if we need to send multiple messages (from testResults)
+    const needsMultipleMessages = parsedTestResults.messageCount > 1;
+    
     // Send webhook with conversation log
     if (process.env.DISCORD_WEBHOOK_URL) {
       try {
         logger.info(`📤 Sending webhook to Discord...`);
         
-        // Use the provided conversation log
-        let conversationPreview = conversationLog || answers || "No conversation log provided";
-        
-        // Format the score
         const scoreParts = score ? score.split('/') : ['0', '8'];
         const scoreValue = parseInt(scoreParts[0]) || 0;
         const scoreTotal = parseInt(scoreParts[1]) || 8;
@@ -83,7 +87,7 @@ router.post("/submit-test-results", async (req, res) => {
         const embed = {
           title: "📝 New Mod Test Submission",
           description: `**${discordUsername}** has completed the certification test`,
-          color: scoreValue >= 6 ? 0x3ba55c : 0xed4245,
+          color: scoreValue >= 6 ? 0x10b981 : 0xed4245,
           fields: [
             {
               name: "👤 User Info",
@@ -96,9 +100,9 @@ router.post("/submit-test-results", async (req, res) => {
               inline: true
             },
             {
-              name: "📝 Questions & Answers",
-              value: `\`\`\`\n${conversationPreview}\n\`\`\``,
-              inline: false
+              name: "📝 Message Count",
+              value: needsMultipleMessages ? `**${parsedTestResults.messageCount || 1} messages**` : "**Complete transcript in following messages**",
+              inline: true
             }
           ],
           footer: {
@@ -107,75 +111,115 @@ router.post("/submit-test-results", async (req, res) => {
           timestamp: new Date().toISOString()
         };
         
-        // Log what we're sending
-        logger.info(`Embed fields: User Info, Score, Questions & Answers (${conversationPreview.length} chars)`);
-        
-        // Send the webhook
-        const webhookResponse = await axios({
+        // Send the embed
+        await axios({
           method: 'post',
           url: process.env.DISCORD_WEBHOOK_URL,
-          data: {
-            embeds: [embed]
-          },
-          headers: {
-            'Content-Type': 'application/json'
-          },
+          data: { embeds: [embed] },
+          headers: { 'Content-Type': 'application/json' },
           timeout: 10000
         });
         
-        logger.success(`✅ Webhook sent successfully! Status: ${webhookResponse.status}`);
+        logger.success(`✅ Embed sent successfully!`);
+        
+        // Now send the conversation log - split if needed
+        let conversationToSend = conversationLog || answers || "No conversation log provided";
+        
+        // If conversation is too long, split it
+        const maxLength = 1900;
+        if (conversationToSend.length > maxLength) {
+          logger.info(`Conversation log length: ${conversationToSend.length}, splitting into multiple messages`);
+          
+          // Split by sections
+          const sections = conversationToSend.split('┌──────────────────────────────────────────────────────────────────────────┐');
+          let currentMessage = "";
+          let messageCount = 0;
+          
+          for (let i = 1; i < sections.length; i++) {
+            const section = '┌──────────────────────────────────────────────────────────────────────────┐' + sections[i];
+            
+            if ((currentMessage + section).length > maxLength) {
+              // Send current message
+              if (currentMessage) {
+                await axios({
+                  method: 'post',
+                  url: process.env.DISCORD_WEBHOOK_URL,
+                  data: { 
+                    content: `\`\`\`\n${currentMessage}\n\`\`\``
+                  },
+                  headers: { 'Content-Type': 'application/json' },
+                  timeout: 10000
+                });
+                messageCount++;
+                await new Promise(resolve => setTimeout(resolve, 500));
+              }
+              
+              // Start new message
+              currentMessage = `PART ${messageCount + 1}\n══════════════════════════════════════════════════════════════════════════════\n` + section;
+            } else {
+              currentMessage += section;
+            }
+          }
+          
+          // Send last message
+          if (currentMessage) {
+            await axios({
+              method: 'post',
+              url: process.env.DISCORD_WEBHOOK_URL,
+              data: { 
+                content: `\`\`\`\n${currentMessage}\n\`\`\``
+              },
+              headers: { 'Content-Type': 'application/json' },
+              timeout: 10000
+            });
+            messageCount++;
+          }
+          
+          logger.success(`✅ Sent ${messageCount} message parts`);
+          
+        } else {
+          // Send as single message
+          await axios({
+            method: 'post',
+            url: process.env.DISCORD_WEBHOOK_URL,
+            data: { 
+              content: `\`\`\`\n${conversationToSend}\n\`\`\``
+            },
+            headers: { 'Content-Type': 'application/json' },
+            timeout: 10000
+          });
+          
+          logger.success(`✅ Conversation log sent successfully!`);
+        }
         
       } catch (webhookError) {
         logger.error("❌ Webhook error:", webhookError.message);
         
-        if (webhookError.response) {
-          logger.error(`Webhook response status: ${webhookError.response.status}`);
-          logger.error(`Webhook response data:`, webhookError.response.data);
-        }
-        
-        // Try alternative format with content only
+        // Try alternative format
         try {
-          logger.info("Attempting alternative webhook format (content only)...");
+          logger.info("Attempting alternative webhook format...");
           
-          // Format the conversation log for content
           let contentLog = conversationLog || answers || "No conversation log";
           if (contentLog.length > 1800) {
-            contentLog = contentLog.substring(0, 1800) + "...";
+            contentLog = contentLog.substring(0, 1800) + "...(truncated)";
           }
           
           const contentMessage = {
-            content: `**New Test Submission - ${discordUsername}**\nScore: ${score} | ID: ${discordId}\n\`\`\`\n${contentLog}\n\`\`\``
+            content: `**New Test Submission - ${discordUsername}**\nScore: ${score}\n\`\`\`\n${contentLog}\n\`\`\``
           };
           
-          const altResponse = await axios({
+          await axios({
             method: 'post',
             url: process.env.DISCORD_WEBHOOK_URL,
             data: contentMessage,
-            headers: {
-              'Content-Type': 'application/json'
-            },
+            headers: { 'Content-Type': 'application/json' },
             timeout: 10000
           });
           
-          logger.success(`✅ Alternative webhook sent! Status: ${altResponse.status}`);
+          logger.success(`✅ Alternative webhook sent!`);
           
         } catch (altError) {
           logger.error("❌ Alternative webhook failed:", altError.message);
-          
-          // Last resort - minimal message
-          try {
-            const minimalMessage = {
-              content: `**New Test Submission**\nUser: ${discordUsername}\nScore: ${score}\nID: ${discordId}`
-            };
-            
-            await axios.post(process.env.DISCORD_WEBHOOK_URL, minimalMessage, {
-              headers: { 'Content-Type': 'application/json' }
-            });
-            
-            logger.success("✅ Minimal webhook sent");
-          } catch (minimalError) {
-            logger.error("❌ All webhook attempts failed");
-          }
         }
       }
     } else {
@@ -232,7 +276,6 @@ router.post("/submit-test-results", async (req, res) => {
 });
 
 // ==================== SIMPLE API ENDPOINT ====================
-
 router.post("/api/submit", async (req, res) => {
   logger.info("📨 SIMPLE API SUBMISSION");
   
@@ -278,7 +321,7 @@ router.post("/api/submit", async (req, res) => {
       logger.success("✅ Simple DB save successful");
     }
     
-    // Send webhook for simple API
+    // Send webhook
     if (process.env.DISCORD_WEBHOOK_URL) {
       try {
         let logPreview = conversationLog || answers || "No log provided";
