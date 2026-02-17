@@ -33,12 +33,10 @@ function setupBotEvents(bot) {
     logger.success(`Discord bot ready as ${bot.user.tag}`);
     logger.info(`📊 Servers: ${bot.guilds.cache.size}`);
     
-    // Log all servers for debugging
     bot.guilds.cache.forEach(guild => {
       logger.info(`   - ${guild.name} (${guild.id})`);
     });
     
-    // Set bot status
     bot.user.setPresence({
       activities: [{ 
         name: 'Mod Applications', 
@@ -47,7 +45,6 @@ function setupBotEvents(bot) {
       status: 'online'
     });
     
-    // Verify bot permissions if guild ID is set
     if (process.env.DISCORD_GUILD_ID) {
       try {
         const guild = await bot.guilds.fetch(process.env.DISCORD_GUILD_ID);
@@ -162,10 +159,9 @@ function initializeBot() {
   startBotWithRetry();
 }
 
-// Export both the bot instance and the functions
 module.exports = { 
-  bot: botInstance,  // This will be null initially but will be set after login
-  getBot: () => botInstance, // Helper function to get the current bot instance
+  bot: botInstance,
+  getBot: () => botInstance,
   botReady, 
   ensureBotReady, 
   initializeBot 
