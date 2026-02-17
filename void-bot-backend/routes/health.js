@@ -5,41 +5,49 @@ const { logger } = require("../utils/logger");
 
 const router = express.Router();
 
-// Health check
+// Health check - FIXED to not depend on session
 router.get("/health", async (req, res) => {
   try {
+    // Test database connection
     const { error } = await supabase
       .from("applications")
       .select("count", { count: 'exact', head: true });
     
-    const dbStatus = error ? `ERROR: ${error.message}` : "CONNECTED";
-    const botStatus = bot.user ? `CONNECTED as ${bot.user.tag}` : "DISCONNECTED";
+    const dbStatus = error ? `ERROR: ${error.message}` : "✅ CONNECTED";
+    
+    // Check bot status safely
+    const { getBot } = require("../config/discord");
+    const bot = getBot();
+    const botStatus = bot && bot.user ? `✅ CONNECTED as ${bot.user.tag}` : "❌ DISCONNECTED";
     
     res.json({ 
       status: "healthy", 
       timestamp: new Date().toISOString(),
       database: dbStatus,
       discordBot: botStatus,
-      discordWebhook: process.env.DISCORD_WEBHOOK_URL ? "CONFIGURED" : "NOT_CONFIGURED",
-      discordGuild: process.env.DISCORD_GUILD_ID ? "CONFIGURED" : "NOT_CONFIGURED",
-      modRole: process.env.MOD_ROLE_ID ? "CONFIGURED" : "NOT_CONFIGURED",
-      session: req.session.user ? "active" : "none",
+      discordWebhook: process.env.DISCORD_WEBHOOK_URL ? "✅ CONFIGURED" : "❌ NOT CONFIGURED",
+      discordGuild: process.env.DISCORD_GUILD_ID ? "✅ CONFIGURED" : "❌ NOT CONFIGURED",
+      modRole: process.env.MOD_ROLE_ID ? "✅ CONFIGURED" : "❌ NOT CONFIGURED",
+      environment: {
+        nodeEnv: process.env.NODE_ENV || 'development',
+        hasSessionSecret: !!process.env.SESSION_SECRET
+      },
       endpoints: {
         submit: "/api/submit",
         submitTestResults: "/submit-test-results",
         admin: "/admin",
-        auth: "/auth/discord"
+        auth: "/auth/discord",
+        startTest: "/api/start-test"
       }
     });
   } catch (err) {
-    res.status(500).json({ 
-      status: "error", 
+    res.status(200).json({ 
+      status: "degraded", 
       error: err.message,
       timestamp: new Date().toISOString()
     });
   }
 });
-
 // Discord API status
 router.get("/api/discord-status", async (req, res) => {
   try {
