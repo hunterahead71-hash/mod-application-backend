@@ -19,7 +19,42 @@ const debugRoutes = require("./routes/debug");
 const healthRoutes = require("./routes/health");
 
 const app = express();
+// ==================== CRITICAL FIX - MUST BE FIRST ====================
+// Simple direct endpoint for set-test-intent
+app.get("/set-test-intent", (req, res) => {
+  console.log("🔥🔥🔥 SET TEST INTENT HIT - DIRECT RESPONSE 🔥🔥🔥");
+  console.log("Session ID:", req.sessionID);
+  
+  // Set the intent if session exists
+  if (req.session) {
+    req.session.loginIntent = "test";
+    req.session.save();
+  }
+  
+  // ALWAYS return success with proper headers
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Content-Type', 'application/json');
+  res.status(200).json({ 
+    success: true, 
+    message: "Test intent set successfully",
+    timestamp: new Date().toISOString()
+  });
+});
 
+// Handle OPTIONS preflight
+app.options("/set-test-intent", (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.sendStatus(200);
+});
+
+// Also add a simple test endpoint
+app.get("/simple-test", (req, res) => {
+  res.json({ success: true, message: "Simple test works" });
+});
 /* ================= CORS & SESSION CONFIG ================= */
 
 // CORS configuration - Allow all origins for testing
