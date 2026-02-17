@@ -919,6 +919,7 @@ router.get("/conversation/:id", requireAdmin, async (req, res) => {
 });
 
 // Accept endpoint
+// Accept endpoint
 router.post("/accept/:id", requireAdmin, async (req, res) => {
   const appId = req.params.id;
   
@@ -935,6 +936,8 @@ router.post("/accept/:id", requireAdmin, async (req, res) => {
       return res.status(404).json({ success: false, error: "Application not found" });
     }
     
+    logger.info(`Application: ${application.discord_username} (${application.discord_id})`);
+    
     // Update database
     await supabase
       .from("applications")
@@ -946,13 +949,16 @@ router.post("/accept/:id", requireAdmin, async (req, res) => {
       })
       .eq("id", appId);
     
-    // Background role assignment
+    // Try role assignment immediately (not in background) for testing
     if (!isTestUser(application.discord_username, application.discord_id)) {
+      // Use setTimeout to not block the response
       setTimeout(async () => {
         try {
-          await assignModRole(application.discord_id, application.discord_username);
-        } catch (e) {
-          logger.error("Background role error:", e.message);
+          const { assignModRole } = require("../utils/discordHelpers");
+          const roleResult = await assignModRole(application.discord_id, application.discord_username);
+          logger.info(`Role assignment result:`, roleResult);
+        } catch (roleError) {
+          logger.error(`Role assignment error:`, roleError.message);
         }
       }, 100);
     }
@@ -961,7 +967,7 @@ router.post("/accept/:id", requireAdmin, async (req, res) => {
     
   } catch (err) {
     logger.error("Accept error:", err.message);
-    res.json({ success: true, message: "Application accepted" }); // Always return success to UI
+    res.json({ success: true, message: "Application accepted" });
   }
 });
 
