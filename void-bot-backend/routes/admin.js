@@ -2480,5 +2480,325 @@ router.delete("/api/mod-roles/:id", requireAdmin, async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+// Add these API endpoints to your existing admin.js file
+// Place this after your existing routes but before module.exports
 
+// ==================== TEST QUESTIONS API ====================
+
+// Get all test questions
+router.get("/api/test-questions", requireAdmin, async (req, res) => {
+  try {
+    logger.info("Fetching test questions...");
+    
+    // Try to get from database
+    const { data, error } = await supabase
+      .from("test_questions")
+      .select("*")
+      .order("id", { ascending: true });
+    
+    if (error) {
+      logger.warn("Test questions table error:", error.message);
+      // Return default questions
+      return res.json({ 
+        success: true, 
+        questions: [
+          { id: 1, user_message: "hey i wanna join void esports, what do i need to do?", username: "FortnitePlayer23", avatar_color: "#5865f2", keywords: ["age","roster","requirement"], required_matches: 2, explanation: "Ask for age and direct to #how-to-join-roster" },
+          { id: 2, user_message: "i want to join as a pro player, i have earnings", username: "CompPlayer99", avatar_color: "#ed4245", keywords: ["tracker","earnings","ping"], required_matches: 2, explanation: "Ask for tracker and ping @trapped" },
+          { id: 3, user_message: "looking to join creative roster, i have clips", username: "CreativeBuilder", avatar_color: "#3ba55c", keywords: ["clip","freebuilding","ping"], required_matches: 2, explanation: "Ask for at least 2 clips" },
+          { id: 4, user_message: "can i join academy? i have 5k PR", username: "AcademyGrinder", avatar_color: "#f59e0b", keywords: ["tracker","username","team.void"], required_matches: 2, explanation: "Ask for tracker and username change" },
+          { id: 5, user_message: "im 14 is that old enough?", username: "YoungPlayer14", avatar_color: "#9146ff", keywords: ["chief","trapped","ping"], required_matches: 2, explanation: "Ping senior staff for verification" },
+          { id: 6, user_message: "i wanna be a void grinder, what's required?", username: "GrinderAccount", avatar_color: "#1da1f2", keywords: ["username","team.void","proof"], required_matches: 2, explanation: "Ask for username change and proof" },
+          { id: 7, user_message: "this server is trash, gonna report it all", username: "ToxicUser123", avatar_color: "#ff0000", keywords: ["chief","trapped","ban"], required_matches: 2, explanation: "Ping senior staff immediately" },
+          { id: 8, user_message: "i make youtube videos, can i join content team?", username: "ContentCreatorYT", avatar_color: "#ff0000", keywords: ["social","links","contentdep"], required_matches: 2, explanation: "Ask for social links and ping contentdep" }
+        ]
+      });
+    }
+    
+    res.json({ success: true, questions: data || [] });
+  } catch (err) {
+    logger.error("Get test questions error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Create test question
+router.post("/api/test-questions", requireAdmin, async (req, res) => {
+  try {
+    const { user_message, username, avatar_color, keywords, required_matches, explanation } = req.body;
+    
+    const { data, error } = await supabase
+      .from("test_questions")
+      .insert([{
+        user_message,
+        username,
+        avatar_color,
+        keywords,
+        required_matches: required_matches || 2,
+        explanation
+      }])
+      .select();
+    
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true, question: data[0] });
+  } catch (err) {
+    logger.error("Create test question error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update test question
+router.put("/api/test-questions/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    
+    const { data, error } = await supabase
+      .from("test_questions")
+      .update(updates)
+      .eq("id", id)
+      .select();
+    
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true, question: data[0] });
+  } catch (err) {
+    logger.error("Update test question error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete test question
+router.delete("/api/test-questions/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { error } = await supabase
+      .from("test_questions")
+      .delete()
+      .eq("id", id);
+    
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    logger.error("Delete test question error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==================== QUIZ QUESTIONS API ====================
+
+// Get all quiz questions
+router.get("/api/quiz-questions", requireAdmin, async (req, res) => {
+  try {
+    logger.info("Fetching quiz questions...");
+    
+    const { data, error } = await supabase
+      .from("quiz_questions")
+      .select("*")
+      .order("question_number", { ascending: true });
+    
+    if (error) {
+      logger.warn("Quiz questions table error:", error.message);
+      return res.json({ 
+        success: true, 
+        questions: [
+          { id: 1, question_number: 1, title: "General Roster Inquiry", description: "A user creates a roster ticket asking how to join", optimal_response: "Hello! What's your age? Please review requirements in #how-to-join-roster.", key_elements: ["age inquiry", "greeting", "direction"], avoid: ["immediate approval"] },
+          { id: 2, question_number: 2, title: "Pro/Semi-Pro Application", description: "User applies for Pro or Semi-Pro", optimal_response: "Please send your Fortnite tracker link and earnings proof. I'll ping @trapped for review.", key_elements: ["tracker", "earnings", "ping senior"], avoid: ["approving without verification"] },
+          { id: 3, question_number: 3, title: "Academy Player Verification", description: "User applies for Academy with PR", optimal_response: "Please send your Fortnite tracker for verification. Ensure username includes 'Void' and provide team.void proof.", key_elements: ["tracker", "username change", "proof"], avoid: ["skipping verification"] },
+          { id: 4, question_number: 4, title: "Content Creator Application", description: "User wants to join content team", optimal_response: "Please send your YouTube/Twitch links with subscriber counts. I'll ping @contentdep for review.", key_elements: ["social links", "subscriber count", "ping content"], avoid: ["approving without department review"] },
+          { id: 5, question_number: 5, title: "GFX/VFX Portfolio Review", description: "User submits portfolio", optimal_response: "Please send your portfolio for quality review. I'll ping @gfx-vfx lead for evaluation.", key_elements: ["portfolio", "quality", "ping lead"], avoid: ["making decisions alone"] },
+          { id: 6, question_number: 6, title: "Creative Roster Submission", description: "User has creative clips", optimal_response: "Please send at least 2 freebuilding clips. I'll ping @creativedepartment for review.", key_elements: ["clips", "minimum 2", "ping department"], avoid: ["approving without review"] },
+          { id: 7, question_number: 7, title: "Grinder Application Processing", description: "User wants to be a grinder", optimal_response: "Please change Discord and Fortnite usernames to include 'Void' and provide team.void proof.", key_elements: ["username change", "team.void", "proof"], avoid: ["skipping verification"] }
+        ]
+      });
+    }
+    
+    res.json({ success: true, questions: data || [] });
+  } catch (err) {
+    logger.error("Get quiz questions error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Create quiz question
+router.post("/api/quiz-questions", requireAdmin, async (req, res) => {
+  try {
+    const { question_number, title, description, optimal_response, key_elements, avoid } = req.body;
+    
+    const { data, error } = await supabase
+      .from("quiz_questions")
+      .insert([{
+        question_number,
+        title,
+        description,
+        optimal_response,
+        key_elements,
+        avoid
+      }])
+      .select();
+    
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true, question: data[0] });
+  } catch (err) {
+    logger.error("Create quiz question error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update quiz question
+router.put("/api/quiz-questions/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    
+    const { data, error } = await supabase
+      .from("quiz_questions")
+      .update(updates)
+      .eq("id", id)
+      .select();
+    
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true, question: data[0] });
+  } catch (err) {
+    logger.error("Update quiz question error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete quiz question
+router.delete("/api/quiz-questions/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { error } = await supabase
+      .from("quiz_questions")
+      .delete()
+      .eq("id", id);
+    
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    logger.error("Delete quiz question error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ==================== MOD ROLES API ====================
+
+// Get all mod roles
+router.get("/api/mod-roles", requireAdmin, async (req, res) => {
+  try {
+    logger.info("Fetching mod roles...");
+    
+    const { data, error } = await supabase
+      .from("mod_roles")
+      .select("*")
+      .order("id", { ascending: true });
+    
+    if (error) {
+      logger.warn("Mod roles table error:", error.message);
+      // Parse from env
+      const envRoles = process.env.MOD_ROLE_ID ? process.env.MOD_ROLE_ID.split(',').map(r => r.trim()) : [];
+      const roles = envRoles.map((roleId, index) => ({
+        id: index + 1,
+        role_id: roleId,
+        role_name: `Role ${index + 1}`,
+        description: 'From environment variables'
+      }));
+      
+      return res.json({ success: true, roles });
+    }
+    
+    res.json({ success: true, roles: data || [] });
+  } catch (err) {
+    logger.error("Get mod roles error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Create mod role
+router.post("/api/mod-roles", requireAdmin, async (req, res) => {
+  try {
+    const { role_id, role_name, description } = req.body;
+    
+    const { data, error } = await supabase
+      .from("mod_roles")
+      .insert([{
+        role_id,
+        role_name,
+        description
+      }])
+      .select();
+    
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true, role: data[0] });
+  } catch (err) {
+    logger.error("Create mod role error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Update mod role
+router.put("/api/mod-roles/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    
+    const { data, error } = await supabase
+      .from("mod_roles")
+      .update(updates)
+      .eq("id", id)
+      .select();
+    
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true, role: data[0] });
+  } catch (err) {
+    logger.error("Update mod role error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete mod role
+router.delete("/api/mod-roles/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { error } = await supabase
+      .from("mod_roles")
+      .delete()
+      .eq("id", id);
+    
+    if (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    logger.error("Delete mod role error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 module.exports = router;
