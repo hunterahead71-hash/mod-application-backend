@@ -8,7 +8,56 @@ const router = express.Router();
 
 // Store intents in memory
 const pendingIntents = new Map();
+// Add these at the top of routes/auth.js
+router.get("/set-test-intent", (req, res) => {
+  console.log("Setting test intent...");
+  req.session.loginIntent = "test";
+  
+  // Store in memory as backup
+  const pendingIntents = new Map();
+  pendingIntents.set(req.sessionID, {
+    intent: "test",
+    timestamp: Date.now()
+  });
+  
+  req.session.save((err) => {
+    if (err) {
+      console.error("Session save error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+    res.json({ 
+      success: true, 
+      message: "Test intent set",
+      loginIntent: req.session.loginIntent,
+      sessionId: req.sessionID
+    });
+  });
+});
 
+router.get("/set-admin-intent", (req, res) => {
+  console.log("Setting admin intent...");
+  req.session.loginIntent = "admin";
+  
+  // Store in memory as backup
+  const pendingIntents = new Map();
+  pendingIntents.set(req.sessionID, {
+    intent: "admin",
+    timestamp: Date.now()
+  });
+  
+  req.session.save((err) => {
+    if (err) {
+      console.error("Session save error:", err);
+      return res.status(500).json({ error: err.message });
+    }
+    res.json({ 
+      success: true, 
+      message: "Admin intent set",
+      loginIntent: req.session.loginIntent,
+      sessionId: req.sessionID
+    });
+  });
+});
 // Test intent endpoints
 router.get("/set-test-intent", (req, res) => {
   logger.info("Setting test intent...");
