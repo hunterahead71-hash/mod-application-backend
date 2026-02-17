@@ -299,9 +299,10 @@ app.use((req, res, next) => {
       '/debug/bot',
       '/debug/bot/status',
       '/auth/discord',
-      '/admin',
+      '/auth/discord/admin',
       '/set-test-intent',  // Added this
-      '/set-admin-intent',
+      '/set-admin-intent', // Added this
+      '/admin',
       '/api/start-test',
       '/api/submit',
       '/submit-test-results',
