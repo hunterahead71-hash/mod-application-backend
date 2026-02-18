@@ -35,7 +35,11 @@ module.exports = {
                     .setRequired(false)),
         
         async execute(interaction) {
-            await interaction.deferReply({ ephemeral: true });
+            // IMMEDIATELY defer reply to prevent timeout
+            await interaction.deferReply({ ephemeral: true }).catch(err => {
+                logger.error('Failed to defer reply:', err);
+                return;
+            });
             
             try {
                 const message = interaction.options.getString('message');
@@ -117,7 +121,7 @@ module.exports = {
                 
             } catch (error) {
                 logger.error('Add question error:', error);
-                await interaction.editReply('❌ An error occurred while adding the question.');
+                await interaction.editReply('❌ An error occurred while adding the question.').catch(() => {});
             }
         }
     },
@@ -134,7 +138,10 @@ module.exports = {
                     .setRequired(false)),
         
         async execute(interaction) {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ ephemeral: true }).catch(err => {
+                logger.error('Failed to defer reply:', err);
+                return;
+            });
             
             try {
                 const page = interaction.options.getInteger('page') || 1;
@@ -142,9 +149,13 @@ module.exports = {
                 const start = (page - 1) * pageSize;
                 
                 // Get total count
-                const { count } = await supabase
+                const { count, error: countError } = await supabase
                     .from('test_questions')
                     .select('*', { count: 'exact', head: true });
+                
+                if (countError) {
+                    return interaction.editReply('❌ Failed to fetch questions.');
+                }
                 
                 // Get paginated questions
                 const { data: questions, error } = await supabase
@@ -183,7 +194,7 @@ module.exports = {
                 
             } catch (error) {
                 logger.error('List questions error:', error);
-                await interaction.editReply('❌ An error occurred while listing questions.');
+                await interaction.editReply('❌ An error occurred while listing questions.').catch(() => {});
             }
         }
     },
@@ -200,7 +211,10 @@ module.exports = {
                     .setRequired(true)),
         
         async execute(interaction) {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ ephemeral: true }).catch(err => {
+                logger.error('Failed to defer reply:', err);
+                return;
+            });
             
             try {
                 const id = interaction.options.getInteger('id');
@@ -235,7 +249,7 @@ module.exports = {
                 
             } catch (error) {
                 logger.error('View question error:', error);
-                await interaction.editReply('❌ An error occurred while fetching the question.');
+                await interaction.editReply('❌ An error occurred while fetching the question.').catch(() => {});
             }
         }
     },
@@ -280,7 +294,10 @@ module.exports = {
                     .setRequired(false)),
         
         async execute(interaction) {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ ephemeral: true }).catch(err => {
+                logger.error('Failed to defer reply:', err);
+                return;
+            });
             
             try {
                 const id = interaction.options.getInteger('id');
@@ -338,7 +355,7 @@ module.exports = {
                 
             } catch (error) {
                 logger.error('Edit question error:', error);
-                await interaction.editReply('❌ An error occurred while editing the question.');
+                await interaction.editReply('❌ An error occurred while editing the question.').catch(() => {});
             }
         }
     },
@@ -359,7 +376,10 @@ module.exports = {
                     .setRequired(false)),
         
         async execute(interaction) {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ ephemeral: true }).catch(err => {
+                logger.error('Failed to defer reply:', err);
+                return;
+            });
             
             try {
                 const id = interaction.options.getInteger('id');
@@ -394,7 +414,7 @@ module.exports = {
                 
             } catch (error) {
                 logger.error('Delete question error:', error);
-                await interaction.editReply('❌ An error occurred while deleting the question.');
+                await interaction.editReply('❌ An error occurred while deleting the question.').catch(() => {});
             }
         }
     },
@@ -415,7 +435,10 @@ module.exports = {
                     .setRequired(true)),
         
         async execute(interaction) {
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ ephemeral: true }).catch(err => {
+                logger.error('Failed to defer reply:', err);
+                return;
+            });
             
             try {
                 const id = interaction.options.getInteger('id');
@@ -460,7 +483,7 @@ module.exports = {
                 
             } catch (error) {
                 logger.error('Test question error:', error);
-                await interaction.editReply('❌ An error occurred while testing the question.');
+                await interaction.editReply('❌ An error occurred while testing the question.').catch(() => {});
             }
         }
     }
