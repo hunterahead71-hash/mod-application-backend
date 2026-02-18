@@ -73,17 +73,48 @@ router.post("/submit-test-results", async (req, res) => {
     // Check if we need to send multiple messages (from testResults)
     const needsMultipleMessages = parsedTestResults.messageCount > 1;
     
-    // Send webhook with conversation log
-    if (process.env.DISCORD_WEBHOOK_URL) {
+    // Save to database FIRST (so we have the application ID)
+    const applicationData = {
+      discord_id: discordId,
+      discord_username: discordUsername,
+      answers: conversationLog || answers || "No conversation log",
+      conversation_log: conversationLog || null,
+      questions_with_answers: questionsWithAnswers ? JSON.stringify(questionsWithAnswers) : null,
+      score: score || "0/8",
+      total_questions: parseInt(totalQuestions) || 8,
+      correct_answers: parseInt(correctAnswers) || 0,
+      wrong_answers: parseInt(wrongAnswers) || 8,
+      test_results: testResults ? JSON.stringify(testResults) : "{}",
+      status: "pending",
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    
+    let applicationId = null;
+    const { data, error } = await supabase
+      .from("applications")
+      .insert([applicationData])
+      .select();
+    
+    if (error) {
+      logger.error("Database insert error:", error.message);
+    } else {
+      logger.success("✅ Database save successful");
+      applicationId = data?.[0]?.id;
+    }
+    
+    // ===== BOT MESSAGE TO CHANNEL =====
+    // Send to Discord channel using bot (not webhook)
+    if (process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CHANNEL_ID) {
       try {
-        logger.info(`📤 Sending webhook to Discord...`);
+        logger.info(`📤 Sending bot message to channel ${process.env.DISCORD_CHANNEL_ID}...`);
         
         const scoreParts = score ? score.split('/') : ['0', '8'];
         const scoreValue = parseInt(scoreParts[0]) || 0;
         const scoreTotal = parseInt(scoreParts[1]) || 8;
         const passStatus = scoreValue >= 6 ? "✅ PASS" : "❌ FAIL";
         
-        // Create the embed
+        // Create the embed with action buttons
         const embed = {
           title: "📝 New Mod Test Submission",
           description: `**${discordUsername}** has completed the certification test`,
@@ -101,157 +132,123 @@ router.post("/submit-test-results", async (req, res) => {
             },
             {
               name: "📝 Message Count",
-              value: needsMultipleMessages ? `**${parsedTestResults.messageCount || 1} messages**` : "**Complete transcript in following messages**",
+              value: needsMultipleMessages ? `**${parsedTestResults.messageCount || 1} messages**` : "**Complete transcript attached**",
               inline: true
             }
           ],
           footer: {
-            text: `Submission ID: ${submissionId}`
+            text: `Application ID: ${applicationId || 'pending'}`
           },
           timestamp: new Date().toISOString()
         };
         
-        // Send the embed
-        await axios({
-          method: 'post',
-          url: process.env.DISCORD_WEBHOOK_URL,
-          data: { embeds: [embed] },
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000
-        });
+        // Get bot instance
+        const { getBot, ensureBotReady } = require("../config/discord");
+        const bot = getBot();
         
-        logger.success(`✅ Embed sent successfully!`);
-        
-        // Now send the conversation log - split if needed
-        let conversationToSend = conversationLog || answers || "No conversation log provided";
-        
-        // If conversation is too long, split it
-        const maxLength = 1900;
-        if (conversationToSend.length > maxLength) {
-          logger.info(`Conversation log length: ${conversationToSend.length}, splitting into multiple messages`);
+        if (bot && await ensureBotReady()) {
+          // Get the channel
+          const channel = await bot.channels.fetch(process.env.DISCORD_CHANNEL_ID);
           
-          // Split by sections
-          const sections = conversationToSend.split('┌──────────────────────────────────────────────────────────────────────────┐');
-          let currentMessage = "";
-          let messageCount = 0;
-          
-          for (let i = 1; i < sections.length; i++) {
-            const section = '┌──────────────────────────────────────────────────────────────────────────┐' + sections[i];
+          if (channel) {
+            // Send the embed
+            const message = await channel.send({ embeds: [embed] });
             
-            if ((currentMessage + section).length > maxLength) {
-              // Send current message
-              if (currentMessage) {
-                await axios({
-                  method: 'post',
-                  url: process.env.DISCORD_WEBHOOK_URL,
-                  data: { 
-                    content: `\`\`\`\n${currentMessage}\n\`\`\``
-                  },
-                  headers: { 'Content-Type': 'application/json' },
-                  timeout: 10000
-                });
-                messageCount++;
-                await new Promise(resolve => setTimeout(resolve, 500));
+            // Add buttons as components
+            const row = {
+              type: 1,
+              components: [
+                {
+                  type: 2,
+                  style: 3,
+                  label: "✅ Accept",
+                  custom_id: `accept_${applicationId || submissionId}_${discordId}`,
+                  emoji: { name: "✅" }
+                },
+                {
+                  type: 2,
+                  style: 4,
+                  label: "❌ Reject",
+                  custom_id: `reject_${applicationId || submissionId}_${discordId}`,
+                  emoji: { name: "❌" }
+                },
+                {
+                  type: 2,
+                  style: 2,
+                  label: "📋 Conversation Log",
+                  custom_id: `convo_${applicationId || submissionId}_${discordId}`,
+                  emoji: { name: "📋" }
+                }
+              ]
+            };
+            
+            // Edit message to add components
+            await message.edit({ embeds: [embed], components: [row] });
+            
+            // Send conversation log as separate message (only visible to staff)
+            let conversationToSend = conversationLog || answers || "No conversation log provided";
+            
+            // If conversation is too long, split it
+            const maxLength = 1900;
+            if (conversationToSend.length > maxLength) {
+              logger.info(`Conversation log length: ${conversationToSend.length}, splitting into multiple messages`);
+              
+              // Split by sections
+              const sections = conversationToSend.split('┌──────────────────────────────────────────────────────────────────────────┐');
+              let currentMessage = "";
+              let messageCount = 0;
+              
+              for (let i = 1; i < sections.length; i++) {
+                const section = '┌──────────────────────────────────────────────────────────────────────────┐' + sections[i];
+                
+                if ((currentMessage + section).length > maxLength) {
+                  // Send current message
+                  if (currentMessage) {
+                    await channel.send({ 
+                      content: `**Conversation Log (Part ${messageCount + 1})**\n\`\`\`\n${currentMessage}\n\`\`\``
+                    });
+                    messageCount++;
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                  }
+                  
+                  // Start new message
+                  currentMessage = `PART ${messageCount + 1}\n══════════════════════════════════════════════════════════════════════════════\n` + section;
+                } else {
+                  currentMessage += section;
+                }
               }
               
-              // Start new message
-              currentMessage = `PART ${messageCount + 1}\n══════════════════════════════════════════════════════════════════════════════\n` + section;
+              // Send last message
+              if (currentMessage) {
+                await channel.send({ 
+                  content: `**Conversation Log (Part ${messageCount + 1})**\n\`\`\`\n${currentMessage}\n\`\`\``
+                });
+                messageCount++;
+              }
+              
+              logger.success(`✅ Sent ${messageCount} conversation log parts`);
+              
             } else {
-              currentMessage += section;
+              // Send as single message
+              await channel.send({ 
+                content: `**Complete Conversation Log**\n\`\`\`\n${conversationToSend}\n\`\`\``
+              });
+              
+              logger.success(`✅ Conversation log sent successfully!`);
             }
+            
+          } else {
+            logger.error("❌ Could not fetch channel");
           }
-          
-          // Send last message
-          if (currentMessage) {
-            await axios({
-              method: 'post',
-              url: process.env.DISCORD_WEBHOOK_URL,
-              data: { 
-                content: `\`\`\`\n${currentMessage}\n\`\`\``
-              },
-              headers: { 'Content-Type': 'application/json' },
-              timeout: 10000
-            });
-            messageCount++;
-          }
-          
-          logger.success(`✅ Sent ${messageCount} message parts`);
-          
         } else {
-          // Send as single message
-          await axios({
-            method: 'post',
-            url: process.env.DISCORD_WEBHOOK_URL,
-            data: { 
-              content: `\`\`\`\n${conversationToSend}\n\`\`\``
-            },
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 10000
-          });
-          
-          logger.success(`✅ Conversation log sent successfully!`);
+          logger.error("❌ Bot not ready");
         }
         
-      } catch (webhookError) {
-        logger.error("❌ Webhook error:", webhookError.message);
-        
-        // Try alternative format
-        try {
-          logger.info("Attempting alternative webhook format...");
-          
-          let contentLog = conversationLog || answers || "No conversation log";
-          if (contentLog.length > 1800) {
-            contentLog = contentLog.substring(0, 1800) + "...(truncated)";
-          }
-          
-          const contentMessage = {
-            content: `**New Test Submission - ${discordUsername}**\nScore: ${score}\n\`\`\`\n${contentLog}\n\`\`\``
-          };
-          
-          await axios({
-            method: 'post',
-            url: process.env.DISCORD_WEBHOOK_URL,
-            data: contentMessage,
-            headers: { 'Content-Type': 'application/json' },
-            timeout: 10000
-          });
-          
-          logger.success(`✅ Alternative webhook sent!`);
-          
-        } catch (altError) {
-          logger.error("❌ Alternative webhook failed:", altError.message);
-        }
+      } catch (botError) {
+        logger.error("❌ Bot message error:", botError.message);
       }
     } else {
-      logger.warn("⚠️ DISCORD_WEBHOOK_URL not set - skipping webhook notification");
-    }
-    
-    // Save to database
-    const applicationData = {
-      discord_id: discordId,
-      discord_username: discordUsername,
-      answers: conversationLog || answers || "No conversation log",
-      conversation_log: conversationLog || null,
-      questions_with_answers: questionsWithAnswers ? JSON.stringify(questionsWithAnswers) : null,
-      score: score || "0/8",
-      total_questions: parseInt(totalQuestions) || 8,
-      correct_answers: parseInt(correctAnswers) || 0,
-      wrong_answers: parseInt(wrongAnswers) || 8,
-      test_results: testResults ? JSON.stringify(testResults) : "{}",
-      status: "pending",
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    };
-    
-    const { data, error } = await supabase
-      .from("applications")
-      .insert([applicationData])
-      .select();
-    
-    if (error) {
-      logger.error("Database insert error:", error.message);
-    } else {
-      logger.success("✅ Database save successful");
+      logger.warn("⚠️ DISCORD_BOT_TOKEN or DISCORD_CHANNEL_ID not set - skipping bot notification");
     }
     
     res.json({
@@ -313,45 +310,12 @@ router.post("/api/submit", async (req, res) => {
       updated_at: new Date().toISOString()
     };
     
-    const dbResult = await supabase.from("applications").insert([applicationData]);
+    const { data, error } = await supabase.from("applications").insert([applicationData]).select();
     
-    if (dbResult.error) {
-      logger.error("Simple DB error:", dbResult.error);
+    if (error) {
+      logger.error("Simple DB error:", error);
     } else {
       logger.success("✅ Simple DB save successful");
-    }
-    
-    // Send webhook
-    if (process.env.DISCORD_WEBHOOK_URL) {
-      try {
-        let logPreview = conversationLog || answers || "No log provided";
-        if (logPreview.length > 1500) {
-          logPreview = logPreview.substring(0, 1500) + "\n...(truncated)...";
-        }
-        
-        const simpleEmbed = {
-          title: "📝 Test Submission",
-          description: `**User:** ${discordUsername}\n**Score:** ${score || "N/A"}`,
-          fields: [
-            {
-              name: "📝 Conversation Log",
-              value: `\`\`\`\n${logPreview}\n\`\`\``,
-              inline: false
-            }
-          ],
-          color: 0x5865f2,
-          timestamp: new Date().toISOString()
-        };
-        
-        await axios.post(process.env.DISCORD_WEBHOOK_URL, { embeds: [simpleEmbed] }, {
-          headers: { 'Content-Type': 'application/json' },
-          timeout: 10000
-        });
-        
-        logger.success("✅ Simple API webhook sent");
-      } catch (webhookError) {
-        logger.error("Simple API webhook error:", webhookError.message);
-      }
     }
     
     res.json({ 
