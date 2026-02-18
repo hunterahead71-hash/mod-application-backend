@@ -1,4 +1,7 @@
 const { REST, Routes } = require('discord.js');
+require('dotenv').config();
+
+// Import your commands
 const questionCommands = require('./commands/questionCommands');
 
 const commands = [
@@ -14,7 +17,8 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN)
 
 (async () => {
     try {
-        console.log('Registering slash commands...');
+        console.log('🔄 Registering slash commands...');
+        console.log('Commands to register:', commands.map(c => c.name).join(', '));
         
         await rest.put(
             Routes.applicationGuildCommands(
@@ -24,7 +28,7 @@ const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN)
             { body: commands }
         );
         
-        console.log('✅ Commands registered successfully!');
+        console.log('✅ Successfully registered commands!');
     } catch (error) {
         console.error('Error registering commands:', error);
     }
