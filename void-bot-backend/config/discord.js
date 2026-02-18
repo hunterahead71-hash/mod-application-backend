@@ -10,7 +10,7 @@ let botLoginAttempts = 0;
 function createBot() {
   return new Client({
     intents: [
-      GatewayIntentBits.Guilds, 
+      GatewayIntentBits.Guilds,
       GatewayIntentBits.GuildMembers,
       GatewayIntentBits.GuildMessages,
       GatewayIntentBits.MessageContent,
@@ -18,10 +18,10 @@ function createBot() {
       GatewayIntentBits.GuildPresences
     ],
     partials: [
-      Partials.Channel, 
-      Partials.GuildMember, 
-      Partials.Message, 
-      Partials.Reaction, 
+      Partials.Channel,
+      Partials.GuildMember,
+      Partials.Message,
+      Partials.Reaction,
       Partials.User
     ]
   });
@@ -31,44 +31,40 @@ function setupBotEvents(bot) {
   bot.on('ready', async () => {
     botReady = true;
     botLoginAttempts = 0;
-    
     logger.success(`Discord bot ready as ${bot.user.tag}`);
     logger.info(`📊 Servers: ${bot.guilds.cache.size}`);
-    
+
     bot.guilds.cache.forEach(guild => {
       logger.info(`   - ${guild.name} (${guild.id})`);
     });
-    
+
     bot.user.setPresence({
-      activities: [{ 
-        name: 'Mod Applications', 
-        type: ActivityType.Watching
-      }],
+      activities: [{ name: 'Mod Applications', type: ActivityType.Watching }],
       status: 'online'
     });
-    
+
     if (process.env.DISCORD_GUILD_ID) {
       try {
         const guild = await bot.guilds.fetch(process.env.DISCORD_GUILD_ID);
         const botMember = await guild.members.fetch(bot.user.id);
-        
         logger.info("🔍 Bot Permissions Check:");
         logger.info(`   - Manage Roles: ${botMember.permissions.has('ManageRoles') ? '✅' : '❌'}`);
         logger.info(`   - Send Messages: ${botMember.permissions.has('SendMessages') ? '✅' : '❌'}`);
         logger.info(`   - Read Messages: ${botMember.permissions.has('ViewChannel') ? '✅' : '❌'}`);
-        
+
         if (process.env.MOD_ROLE_ID) {
-          const modRole = guild.roles.cache.get(process.env.MOD_ROLE_ID);
-          logger.info(`   - Mod Role Found: ${modRole ? `✅ ${modRole.name}` : '❌ Not Found'}`);
-          
-          if (modRole) {
-            logger.info(`   - Role Position: ${modRole.position}`);
-            logger.info(`   - Bot's Highest Role Position: ${botMember.roles.highest.position}`);
-            
-            if (modRole.position >= botMember.roles.highest.position) {
-              logger.warn(`⚠️  WARNING: Mod role is higher than bot's highest role! Bot cannot assign this role.`);
+          const roleIds = process.env.MOD_ROLE_ID.split(',').map(id => id.trim());
+          roleIds.forEach(roleId => {
+            const role = guild.roles.cache.get(roleId);
+            logger.info(`   - Mod Role ${roleId}: ${role ? `✅ ${role.name}` : '❌ Not Found'}`);
+            if (role) {
+              logger.info(`      - Role Position: ${role.position}`);
+              logger.info(`      - Bot's Highest Role Position: ${botMember.roles.highest.position}`);
+              if (role.position >= botMember.roles.highest.position) {
+                logger.warn(`⚠️  Role ${role.name} is higher than bot's highest role!`);
+              }
             }
-          }
+          });
         }
       } catch (error) {
         logger.error("❌ Error checking bot permissions:", error.message);
@@ -76,185 +72,126 @@ function setupBotEvents(bot) {
     }
   });
 
-  bot.on('error', (error) => {
-    logger.error('❌ Discord bot error:', error.message);
-  });
+  bot.on('error', (error) => logger.error('❌ Discord bot error:', error.message));
+  bot.on('warn', (warning) => logger.warn('⚠️ Discord bot warning:', warning));
 
-  bot.on('warn', (warning) => {
-    logger.warn('⚠️ Discord bot warning:', warning);
-  });
-
-  // Handle button interactions
   bot.on('interactionCreate', async (interaction) => {
     if (!interaction.isButton()) return;
-    
     logger.info(`🔘 Button pressed: ${interaction.customId} by ${interaction.user.tag}`);
-    
+
     try {
-      // Parse custom ID: action_applicationId_discordId
       const [action, appId, discordId] = interaction.customId.split('_');
-      
-      if (action === 'accept') {
-        await handleAcceptButton(interaction, appId, discordId);
-      } else if (action === 'reject') {
-        await handleRejectButton(interaction, appId, discordId);
-      } else if (action === 'convo') {
-        await handleConversationButton(interaction, appId, discordId);
-      }
-      
+      if (action === 'accept') await handleAcceptButton(interaction, appId, discordId);
+      else if (action === 'reject') await handleRejectButton(interaction, appId, discordId);
+      else if (action === 'convo') await handleConversationButton(interaction, appId, discordId);
     } catch (error) {
-      logger.error("❌ Error handling button interaction:", error.message);
-      await interaction.reply({ 
-        content: 'There was an error processing this action.', 
-        ephemeral: true 
-      }).catch(() => {});
+      logger.error("❌ Button error:", error.message);
+      await interaction.reply({ content: 'Error processing action.', ephemeral: true }).catch(() => {});
     }
   });
 }
 
-// Handle accept button
 async function handleAcceptButton(interaction, appId, discordId) {
-  // Defer reply to give us time to process
   await interaction.deferReply({ ephemeral: true });
-  
   try {
-    logger.info(`✅ Accept button pressed for application ${appId}`);
-    
-    // Get application from database
+    logger.info(`✅ Accepting application ${appId}`);
     const { data: application, error } = await supabase
       .from("applications")
       .select("*")
       .eq("id", appId)
       .single();
-    
+
     if (error || !application) {
-      return await interaction.editReply({ 
-        content: `❌ Application not found in database.` 
-      });
+      return await interaction.editReply({ content: `❌ Application not found.` });
     }
-    
     if (application.status !== 'pending') {
-      return await interaction.editReply({ 
-        content: `❌ This application has already been ${application.status}.` 
-      });
+      return await interaction.editReply({ content: `❌ Already ${application.status}.` });
     }
-    
+
     // Update database
     await supabase
       .from("applications")
-      .update({ 
+      .update({
         status: "accepted",
         updated_at: new Date().toISOString(),
         reviewed_by: interaction.user.tag,
         reviewed_at: new Date().toISOString()
       })
       .eq("id", appId);
-    
-    // Update the original message
-    if (interaction.message && interaction.message.embeds.length > 0) {
+
+    // Update message embed
+    if (interaction.message?.embeds.length) {
       const embed = interaction.message.embeds[0];
       const updatedEmbed = {
         ...embed.toJSON(),
         color: 0x10b981,
-        fields: [
-          ...embed.fields,
-          {
-            name: "✅ Accepted By",
-            value: interaction.user.tag,
-            inline: true
-          }
-        ]
+        fields: [...embed.fields, { name: "✅ Accepted By", value: interaction.user.tag, inline: true }]
       };
-      
-      await interaction.message.edit({ 
-        embeds: [updatedEmbed], 
-        components: [] // Remove buttons
-      });
+      await interaction.message.edit({ embeds: [updatedEmbed], components: [] });
     }
-    
-    // FIX: Actually assign the role and send DM
+
+    // ACTUALLY ASSIGN ROLES
     let roleResult = null;
     try {
       roleResult = await assignModRole(discordId, application.discord_username);
-      logger.success(`✅ Role assignment attempted: ${JSON.stringify(roleResult)}`);
+      logger.success(`Role assignment result: ${JSON.stringify(roleResult)}`);
     } catch (roleError) {
       logger.error("Role assignment error:", roleError.message);
     }
-    
-    // Send success message
-    let replyMessage = `✅ Application accepted!`;
-    if (roleResult && roleResult.success) {
-      replyMessage += `\n✅ Roles assigned: ${roleResult.assigned.map(r => r.name).join(', ')}`;
+
+    let reply = `✅ Application accepted!`;
+    if (roleResult?.success) {
+      reply += `\n✅ Assigned: ${roleResult.assigned.map(r => r.name).join(', ')}`;
     } else if (roleResult) {
-      replyMessage += `\n⚠️ Role assignment had issues: ${roleResult.error || 'Check logs'}`;
+      reply += `\n⚠️ Role issues: ${roleResult.error || 'Check logs'}`;
     }
-    
-    await interaction.editReply({ content: replyMessage });
-    
+    await interaction.editReply({ content: reply });
+
   } catch (error) {
-    logger.error("Accept handler error:", error.message);
-    await interaction.editReply({ 
-      content: `❌ Error: ${error.message}` 
-    }).catch(() => {});
+    logger.error("Accept error:", error.message);
+    await interaction.editReply({ content: `❌ Error: ${error.message}` }).catch(() => {});
   }
 }
 
-// Handle reject button
 async function handleRejectButton(interaction, appId, discordId) {
-  // Create modal for rejection reason
   const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-  
   const modal = new ModalBuilder()
     .setCustomId(`reject_reason_${appId}_${discordId}`)
     .setTitle('Reject Application');
-  
   const reasonInput = new TextInputBuilder()
     .setCustomId('rejectReason')
     .setLabel('Rejection Reason')
     .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder('Enter the reason for rejection...')
-    .setValue('Insufficient test score')
+    .setPlaceholder('Enter the reason...')
     .setRequired(true);
-  
-  const actionRow = new ActionRowBuilder().addComponents(reasonInput);
-  modal.addComponents(actionRow);
-  
+  modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
   await interaction.showModal(modal);
-  
-  // Handle modal submission
-  const filter = (i) => i.customId === `reject_reason_${appId}_${discordId}`;
+
   try {
-    const modalInteraction = await interaction.awaitModalSubmit({ filter, time: 60000 });
-    
+    const modalInteraction = await interaction.awaitModalSubmit({
+      filter: i => i.customId === `reject_reason_${appId}_${discordId}`,
+      time: 60000
+    });
     await modalInteraction.deferReply({ ephemeral: true });
-    
     const reason = modalInteraction.fields.getTextInputValue('rejectReason');
-    
-    logger.info(`❌ Reject button pressed for application ${appId} with reason: ${reason}`);
-    
-    // Get application from database
+    logger.info(`❌ Rejecting ${appId}: ${reason}`);
+
     const { data: application, error } = await supabase
       .from("applications")
       .select("*")
       .eq("id", appId)
       .single();
-    
+
     if (error || !application) {
-      return await modalInteraction.editReply({ 
-        content: `❌ Application not found in database.` 
-      });
+      return await modalInteraction.editReply({ content: `❌ Application not found.` });
     }
-    
     if (application.status !== 'pending') {
-      return await modalInteraction.editReply({ 
-        content: `❌ This application has already been ${application.status}.` 
-      });
+      return await modalInteraction.editReply({ content: `❌ Already ${application.status}.` });
     }
-    
-    // Update database
+
     await supabase
       .from("applications")
-      .update({ 
+      .update({
         status: "rejected",
         updated_at: new Date().toISOString(),
         reviewed_by: interaction.user.tag,
@@ -262,168 +199,114 @@ async function handleRejectButton(interaction, appId, discordId) {
         rejection_reason: reason
       })
       .eq("id", appId);
-    
-    // FIX: Actually send the rejection DM
+
+    // ACTUALLY SEND REJECTION DM
     let dmResult = false;
     try {
       dmResult = await sendRejectionDM(discordId, application.discord_username, reason);
-      logger.success(`✅ Rejection DM attempted: ${dmResult}`);
+      logger.success(`Rejection DM sent: ${dmResult}`);
     } catch (dmError) {
       logger.error("DM error:", dmError.message);
     }
-    
-    // Update the original message
-    if (interaction.message && interaction.message.embeds.length > 0) {
+
+    if (interaction.message?.embeds.length) {
       const embed = interaction.message.embeds[0];
       const updatedEmbed = {
         ...embed.toJSON(),
         color: 0xed4245,
         fields: [
           ...embed.fields,
-          {
-            name: "❌ Rejected By",
-            value: interaction.user.tag,
-            inline: true
-          },
-          {
-            name: "📝 Reason",
-            value: reason,
-            inline: false
-          }
+          { name: "❌ Rejected By", value: interaction.user.tag, inline: true },
+          { name: "📝 Reason", value: reason, inline: false }
         ]
       };
-      
-      await interaction.message.edit({ 
-        embeds: [updatedEmbed], 
-        components: [] // Remove buttons
-      });
+      await interaction.message.edit({ embeds: [updatedEmbed], components: [] });
     }
-    
-    await modalInteraction.editReply({ 
-      content: `✅ Application rejected with reason: "${reason}"\n${dmResult ? '✅ DM sent to user.' : '⚠️ Could not send DM (user may have DMs disabled).'}` 
+
+    await modalInteraction.editReply({
+      content: `✅ Rejected: "${reason}"\n${dmResult ? '✅ DM sent' : '⚠️ DM failed (user may have DMs off)'}`
     });
-    
+
   } catch (error) {
     logger.error("Reject modal error:", error.message);
     if (error.message.includes('time')) {
-      await interaction.followUp({ 
-        content: '❌ You took too long to respond. Please try again.', 
-        ephemeral: true 
-      }).catch(() => {});
+      await interaction.followUp({ content: '❌ Timed out. Try again.', ephemeral: true }).catch(() => {});
     }
   }
 }
 
-// Handle conversation log button
 async function handleConversationButton(interaction, appId, discordId) {
   await interaction.deferReply({ ephemeral: true });
-  
   try {
-    logger.info(`📋 Conversation button pressed for application ${appId}`);
-    
-    // Get application from database
     const { data: application, error } = await supabase
       .from("applications")
       .select("conversation_log, answers")
       .eq("id", appId)
       .single();
-    
+
     if (error || !application) {
-      return await interaction.editReply({ 
-        content: `❌ Application not found in database.` 
-      });
+      return await interaction.editReply({ content: `❌ Application not found.` });
     }
-    
-    const conversationLog = application.conversation_log || application.answers || "No conversation log available.";
-    
-    // Send as file if too long, otherwise as message
-    if (conversationLog.length > 1900) {
-      const buffer = Buffer.from(conversationLog, 'utf-8');
-      const attachment = { files: [{ attachment: buffer, name: `conversation_${appId}.txt` }] };
-      
-      await interaction.editReply({ 
-        content: `📋 **Conversation Log for Application #${appId}**`,
+
+    const conversation = application.conversation_log || application.answers || "No log available.";
+    if (conversation.length > 1900) {
+      const buffer = Buffer.from(conversation, 'utf-8');
+      await interaction.editReply({
+        content: `📋 Conversation Log for #${appId}`,
         files: [{ attachment: buffer, name: `conversation_${appId}.txt` }]
       });
     } else {
-      await interaction.editReply({ 
-        content: `📋 **Conversation Log for Application #${appId}**\n\`\`\`\n${conversationLog}\n\`\`\``
-      });
+      await interaction.editReply({ content: `📋 **Conversation Log**\n\`\`\`\n${conversation}\n\`\`\`` });
     }
-    
   } catch (error) {
-    logger.error("Conversation button error:", error.message);
-    await interaction.editReply({ 
-      content: `❌ Error: ${error.message}` 
-    }).catch(() => {});
+    logger.error("Convo button error:", error.message);
+    await interaction.editReply({ content: `❌ Error: ${error.message}` }).catch(() => {});
   }
 }
 
 async function loginBot() {
   logger.info("🔐 Attempting bot login...");
-  
   if (!process.env.DISCORD_BOT_TOKEN) {
-    logger.error("❌ CRITICAL: DISCORD_BOT_TOKEN not set!");
+    logger.error("❌ DISCORD_BOT_TOKEN not set!");
     return false;
   }
-  
-  const token = process.env.DISCORD_BOT_TOKEN;
-  
   try {
-    await botInstance.login(token);
+    await botInstance.login(process.env.DISCORD_BOT_TOKEN);
     botReady = true;
     logger.success("✅ Bot login successful!");
     return true;
   } catch (error) {
     logger.error("❌ Bot login failed:", error.message);
-    
     if (error.message.includes("disallowed intents")) {
-      logger.info("💡 FIX: Go to Discord Developer Portal → Bot → Enable:");
-      logger.info("   - SERVER MEMBERS INTENT (REQUIRED)");
-      logger.info("   - MESSAGE CONTENT INTENT (REQUIRED)");
+      logger.info("💡 Enable SERVER MEMBERS INTENT and MESSAGE CONTENT INTENT in Discord Developer Portal.");
     }
-    
     return false;
   }
 }
 
 async function ensureBotReady() {
-  if (!botInstance) {
-    logger.error("❌ Bot instance is null!");
-    return false;
-  }
-  
+  if (!botInstance) return false;
   if (botReady && botInstance.isReady()) return true;
-  
-  logger.info("🔄 Bot not ready, attempting to reconnect...");
-  
+  logger.info("🔄 Bot not ready, reconnecting...");
   if (!botInstance.isReady() && process.env.DISCORD_BOT_TOKEN) {
-    const success = await loginBot();
-    if (success) {
-      botReady = true;
-      return true;
-    }
+    return await loginBot();
   }
-  
   return false;
 }
 
 async function startBotWithRetry() {
   if (!process.env.DISCORD_BOT_TOKEN) {
-    logger.warn("⚠️ DISCORD_BOT_TOKEN not set - bot features disabled");
+    logger.warn("⚠️ DISCORD_BOT_TOKEN not set - bot disabled");
     return;
   }
-  
   logger.info("🤖 Starting Discord bot...");
   botLoginAttempts++;
-  
   try {
     await loginBot();
   } catch (error) {
     logger.error(`❌ Bot startup failed (attempt ${botLoginAttempts}):`, error.message);
-    
     if (botLoginAttempts < 3) {
-      logger.info(`⏳ Retrying in 10 seconds...`);
+      logger.info("⏳ Retrying in 10 seconds...");
       setTimeout(startBotWithRetry, 10000);
     }
   }
@@ -435,10 +318,10 @@ function initializeBot() {
   startBotWithRetry();
 }
 
-module.exports = { 
+module.exports = {
   bot: botInstance,
   getBot: () => botInstance,
-  botReady, 
-  ensureBotReady, 
-  initializeBot 
+  botReady,
+  ensureBotReady,
+  initializeBot
 };
