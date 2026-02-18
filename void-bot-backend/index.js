@@ -459,7 +459,8 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   const bot = getBot();
   const botConnected = bot && bot.user ? true : false;
-  
+  // Add this to the startup banner
+  console.log(`║ 📢 Bot Channel: ${process.env.DISCORD_CHANNEL_ID ? "✅ CONFIGURED" : "⚠️ NOT SET"}            ║`);
   console.log(`
 ╔══════════════════════════════════════════════════════════════════════╗
 ║                VOID ESPORTS MOD TEST SERVER v2.6                    ║
