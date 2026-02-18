@@ -86,81 +86,104 @@ client.on('error', (error) => {
 client.on('warn', (warning) => {
   logger.warn('⚠️ Discord client warning:', warning);
 });
-// Import command handlers
-const questionCommands = require('./commands/questionCommands');
 
-// In your interactionCreate handler
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-    
-    const { commandName } = interaction;
-    
-    try {
-        switch (commandName) {
-            case 'addquestion':
-                await questionCommands.addQuestion.execute(interaction);
-                break;
-            case 'listquestions':
-                await questionCommands.listQuestions.execute(interaction);
-                break;
-            case 'viewquestion':
-                await questionCommands.viewQuestion.execute(interaction);
-                break;
-            case 'editquestion':
-                await questionCommands.editQuestion.execute(interaction);
-                break;
-            case 'deletequestion':
-                await questionCommands.deleteQuestion.execute(interaction);
-                break;
-            case 'testquestion':
-                await questionCommands.testQuestion.execute(interaction);
-                break;
-            default:
-                // Handle other commands
-                break;
-        }
-    } catch (error) {
-        console.error(`Error executing ${commandName}:`, error);
-        await interaction.reply({ 
-            content: 'There was an error executing this command.', 
-            ephemeral: true 
-        });
-    }
-});
 // ==================== BUTTON HANDLERS ====================
 client.on('interactionCreate', async (interaction) => {
-  if (!interaction.isButton()) return;
-  
-  logger.info(`🔘 Button clicked: ${interaction.customId} by ${interaction.user.tag}`);
+  // Handle button interactions
+  if (interaction.isButton()) {
+    logger.info(`🔘 Button clicked: ${interaction.customId} by ${interaction.user.tag}`);
 
-  try {
-    // IMMEDIATELY defer the interaction to prevent timeout
-    await interaction.deferUpdate().catch(err => {
-      logger.error(`Failed to defer interaction: ${err.message}`);
-    });
-
-    // Lazy load helpers to avoid circular dependency
-    if (!discordHelpers) {
-      discordHelpers = require("../utils/discordHelpers");
-    }
-
-    const [action, appId, discordId] = interaction.customId.split('_');
-
-    if (action === 'accept') {
-      await handleAccept(interaction, appId, discordId, discordHelpers);
-    } else if (action === 'reject') {
-      await handleReject(interaction, appId, discordId, discordHelpers);
-    } else if (action === 'convo') {
-      await handleConvo(interaction, appId);
-    }
-  } catch (error) {
-    logger.error("❌ Button handler error:", error);
     try {
-      await interaction.followUp({ 
-        content: '❌ Error processing button. Check logs.', 
+      // IMMEDIATELY defer the interaction to prevent timeout
+      await interaction.deferUpdate().catch(err => {
+        logger.error(`Failed to defer interaction: ${err.message}`);
+      });
+
+      // Lazy load helpers to avoid circular dependency
+      if (!discordHelpers) {
+        discordHelpers = require("../utils/discordHelpers");
+      }
+
+      const [action, appId, discordId] = interaction.customId.split('_');
+
+      if (action === 'accept') {
+        await handleAccept(interaction, appId, discordId, discordHelpers);
+      } else if (action === 'reject') {
+        await handleReject(interaction, appId, discordId, discordHelpers);
+      } else if (action === 'convo') {
+        await handleConvo(interaction, appId);
+      }
+    } catch (error) {
+      logger.error("❌ Button handler error:", error);
+      try {
+        await interaction.followUp({ 
+          content: '❌ Error processing button. Check logs.', 
+          ephemeral: true 
+        }).catch(() => {});
+      } catch {}
+    }
+    return;
+  }
+  
+  // ==================== SLASH COMMAND HANDLERS ====================
+  if (interaction.isChatInputCommand()) {
+    // Dynamically import commands to avoid circular dependency
+    let questionCommands;
+    try {
+      questionCommands = require('../commands/questionCommands');
+    } catch (error) {
+      logger.error("Failed to load question commands:", error.message);
+      return interaction.reply({ 
+        content: '❌ Command system not available. Please check server logs.', 
         ephemeral: true 
-      }).catch(() => {});
-    } catch {}
+      });
+    }
+    
+    const { commandName } = interaction;
+    logger.info(`🎮 Slash command: /${commandName} by ${interaction.user.tag}`);
+    
+    try {
+      switch (commandName) {
+        case 'addquestion':
+          await questionCommands.addQuestion.execute(interaction);
+          break;
+        case 'listquestions':
+          await questionCommands.listQuestions.execute(interaction);
+          break;
+        case 'viewquestion':
+          await questionCommands.viewQuestion.execute(interaction);
+          break;
+        case 'editquestion':
+          await questionCommands.editQuestion.execute(interaction);
+          break;
+        case 'deletequestion':
+          await questionCommands.deleteQuestion.execute(interaction);
+          break;
+        case 'testquestion':
+          await questionCommands.testQuestion.execute(interaction);
+          break;
+        default:
+          await interaction.reply({ 
+            content: '❌ Unknown command.', 
+            ephemeral: true 
+          });
+      }
+    } catch (error) {
+      logger.error(`❌ Error executing /${commandName}:`, error);
+      
+      // Check if already replied or deferred
+      if (interaction.replied || interaction.deferred) {
+        await interaction.followUp({ 
+          content: '❌ There was an error executing this command.', 
+          ephemeral: true 
+        }).catch(() => {});
+      } else {
+        await interaction.reply({ 
+          content: '❌ There was an error executing this command.', 
+          ephemeral: true 
+        }).catch(() => {});
+      }
+    }
   }
 });
 
