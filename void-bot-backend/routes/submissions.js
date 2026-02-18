@@ -2,7 +2,7 @@ const express = require("express");
 const { supabase } = require("../config/supabase");
 const { logger } = require("../utils/logger");
 const { getClient, ensureReady, getBot } = require("../config/discord");
-const { requireAdmin } = require("../middleware/auth"); // ADD THIS LINE
+const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -26,7 +26,6 @@ router.post("/submit-test-results", async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing user info" });
     }
 
-    // Save to database
     const { data, error } = await supabase
       .from("applications")
       .insert([{
@@ -52,7 +51,6 @@ router.post("/submit-test-results", async (req, res) => {
 
     const appId = data?.[0]?.id;
 
-    // ===== SEND TO DISCORD CHANNEL (WITH MESSAGE ID STORAGE) =====
     if (process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CHANNEL_ID) {
       try {
         const client = getBot();
@@ -114,13 +112,11 @@ router.post("/submit-test-results", async (req, res) => {
             const message = await channel.send({ embeds: [embed], components: [row] });
             logger.success(`✅ Sent to Discord #${channel.name}`);
 
-            // Store message ID for future updates
             if (appId) {
               await supabase
                 .from("applications")
                 .update({ discord_message_id: message.id })
                 .eq("id", appId);
-              logger.info(`📝 Stored Discord message ID: ${message.id} for app ${appId}`);
             }
           }
         }
@@ -208,7 +204,7 @@ router.post("/api/submit", async (req, res) => {
           }
         }
       } catch (discordError) {
-        // Non-critical, don't log loudly
+        // Non-critical
       }
     }
 
@@ -218,19 +214,15 @@ router.post("/api/submit", async (req, res) => {
   }
 });
 
-// ==================== TEST QUESTIONS API - UPDATED WITH ENABLED FIELD ====================
-
-// Get all test questions (public - no auth required for fetching questions)
-// Get all test questions - ONLY ENABLED QUESTIONS
+// ==================== TEST QUESTIONS API ====================
 router.get("/api/test-questions", async (req, res) => {
   try {
     console.log("📥 Fetching test questions from database...");
     
-    // Get ONLY enabled questions from database
     const { data, error } = await supabase
       .from("test_questions")
       .select("*")
-      .eq('enabled', true)  // CRITICAL: Only get enabled questions
+      .eq('enabled', true)
       .order("id", { ascending: true });
     
     if (error) {
@@ -240,7 +232,6 @@ router.get("/api/test-questions", async (req, res) => {
     
     console.log(`✅ Found ${data?.length || 0} enabled questions`);
     
-    // Return the enabled questions
     res.json({ 
       success: true, 
       questions: data || [] 
@@ -252,22 +243,6 @@ router.get("/api/test-questions", async (req, res) => {
   }
 });
 
-    
-    
-    // Make sure each question has an enabled field (default to true if null)
-    const questionsWithEnabled = (data || []).map(q => ({
-      ...q,
-      enabled: q.enabled !== false // default to true if null
-    }));
-    
-    res.json({ success: true, questions: questionsWithEnabled });
-  } catch (err) {
-    logger.error("Get test questions error:", err);
-    res.json({ success: true, questions: [] });
-  }
-});
-
-// Create test question (admin only)
 router.post("/api/test-questions", requireAdmin, async (req, res) => {
   try {
     const { user_message, username, avatar_color, keywords, required_matches, explanation } = req.body;
@@ -299,7 +274,6 @@ router.post("/api/test-questions", requireAdmin, async (req, res) => {
   }
 });
 
-// Update test question (admin only)
 router.put("/api/test-questions/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -325,14 +299,12 @@ router.put("/api/test-questions/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// Delete test question (admin only) - soft delete by setting enabled=false
 router.delete("/api/test-questions/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { permanent } = req.query;
     
     if (permanent === 'true') {
-      // Permanent delete
       const { error } = await supabase
         .from("test_questions")
         .delete()
@@ -342,7 +314,6 @@ router.delete("/api/test-questions/:id", requireAdmin, async (req, res) => {
         return res.json({ success: false, error: error.message });
       }
     } else {
-      // Soft delete - just disable
       const { error } = await supabase
         .from("test_questions")
         .update({ enabled: false, updated_at: new Date().toISOString() })
@@ -356,13 +327,11 @@ router.delete("/api/test-questions/:id", requireAdmin, async (req, res) => {
     res.json({ success: true });
   } catch (err) {
     logger.error("Delete test question error:", err);
-    res.json({ success: true }); // Still return success to frontend
+    res.json({ success: true });
   }
 });
 
 // ==================== APPLICATION STATUS ENDPOINTS ====================
-
-// Get application by ID
 router.get("/application/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -383,7 +352,6 @@ router.get("/application/:id", async (req, res) => {
   }
 });
 
-// Get application by Discord ID
 router.get("/user/:discordId", async (req, res) => {
   try {
     const { discordId } = req.params;
