@@ -26,13 +26,16 @@ const client = new Client({
 let botReady = false;
 let loginAttempts = 0;
 
-// ==================== AUTO-REGISTER SLASH COMMANDS ====================
+// ==================== AUTO-REGISTER SLASH COMMANDS FOR ALL SERVERS ====================
 async function registerSlashCommands() {
   try {
-    // Dynamically import question commands
+    logger.info('🔄 Starting slash command registration for ALL servers...');
+    
+    // Load commands
     let questionCommands;
     try {
       questionCommands = require('../commands/questionCommands');
+      logger.info('✅ Successfully loaded question commands');
     } catch (error) {
       logger.warn("⚠️ Question commands not found, skipping registration");
       return;
@@ -47,21 +50,36 @@ async function registerSlashCommands() {
       questionCommands.testQuestion.data.toJSON()
     ];
 
+    logger.info(`📋 Prepared ${commands.length} commands for registration`);
+    
     const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
     
-    logger.info('🔄 Auto-registering slash commands...');
+    // Check if bot is in any servers
+    if (client.guilds.cache.size === 0) {
+      logger.warn("⚠️ Bot is not in any servers yet!");
+      return;
+    }
     
-    await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.DISCORD_CLIENT_ID, 
-        process.env.DISCORD_GUILD_ID
-      ),
-      { body: commands }
-    );
+    // Register for EACH guild the bot is in
+    for (const [guildId, guild] of client.guilds.cache) {
+      try {
+        logger.info(`🔄 Registering commands for guild: ${guild.name} (${guildId})...`);
+        
+        await rest.put(
+          Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, guildId),
+          { body: commands }
+        );
+        
+        logger.success(`✅ Registered commands for ${guild.name}`);
+      } catch (guildError) {
+        logger.error(`❌ Failed to register for guild ${guildId}:`, guildError.message);
+      }
+    }
     
-    logger.success('✅ Slash commands registered automatically!');
+    logger.success('✅ Finished registering commands for all servers!');
+    
   } catch (error) {
-    logger.error('❌ Failed to auto-register commands:', error.message);
+    logger.error('❌ Failed to register commands:', error);
   }
 }
 
@@ -73,7 +91,7 @@ client.on('clientReady', async () => {
   logger.success(`✅ Discord bot ready as ${client.user.tag}`);
   logger.info(`📊 Servers: ${client.guilds.cache.size}`);
   
-  // Auto-register slash commands on startup
+  // Auto-register slash commands on startup for ALL servers
   await registerSlashCommands();
   
   client.guilds.cache.forEach(guild => {
