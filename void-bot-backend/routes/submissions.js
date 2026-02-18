@@ -1,7 +1,7 @@
 const express = require("express");
 const { supabase } = require("../config/supabase");
 const { logger } = require("../utils/logger");
-const { getClient, ensureReady } = require("../config/discord");
+const { getClient, ensureReady, getBot } = require("../config/discord");
 
 const router = express.Router();
 
@@ -54,7 +54,7 @@ router.post("/submit-test-results", async (req, res) => {
     // ===== SEND TO DISCORD CHANNEL (WITH MESSAGE ID STORAGE) =====
     if (process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CHANNEL_ID) {
       try {
-        const client = getClient();
+        const client = getBot(); // Use getBot() instead of getClient()
         if (client && await ensureReady()) {
           const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
 
@@ -170,7 +170,7 @@ router.post("/api/submit", async (req, res) => {
     // Try to send to Discord if possible (without blocking)
     if (process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CHANNEL_ID && appId) {
       try {
-        const client = getClient();
+        const client = getBot(); // Use getBot() instead of getClient()
         if (client && await ensureReady()) {
           const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
           if (channel) {
