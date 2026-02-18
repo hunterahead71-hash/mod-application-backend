@@ -3,7 +3,7 @@ const { supabase } = require('../config/supabase');
 const { logger } = require('../utils/logger');
 
 module.exports = {
-    // /addquestion command
+    // ==================== /addquestion COMMAND ====================
     addQuestion: {
         data: new SlashCommandBuilder()
             .setName('addquestion')
@@ -25,14 +25,14 @@ module.exports = {
                 option.setName('keywords')
                     .setDescription('Comma-separated keywords to look for')
                     .setRequired(true))
-            .addIntegerOption(option =>
-                option.setName('matches')
-                    .setDescription('Number of keywords required (default: 2)')
-                    .setRequired(false))
             .addStringOption(option =>
                 option.setName('explanation')
                     .setDescription('Explanation/feedback for correct answer')
-                    .setRequired(true)),
+                    .setRequired(true))
+            .addIntegerOption(option =>
+                option.setName('matches')
+                    .setDescription('Number of keywords required (default: 2)')
+                    .setRequired(false)),
         
         async execute(interaction) {
             await interaction.deferReply({ ephemeral: true });
@@ -122,7 +122,7 @@ module.exports = {
         }
     },
 
-    // /listquestions command
+    // ==================== /listquestions COMMAND ====================
     listQuestions: {
         data: new SlashCommandBuilder()
             .setName('listquestions')
@@ -188,7 +188,7 @@ module.exports = {
         }
     },
 
-    // /viewquestion command
+    // ==================== /viewquestion COMMAND ====================
     viewQuestion: {
         data: new SlashCommandBuilder()
             .setName('viewquestion')
@@ -240,7 +240,7 @@ module.exports = {
         }
     },
 
-    // /editquestion command
+    // ==================== /editquestion COMMAND ====================
     editQuestion: {
         data: new SlashCommandBuilder()
             .setName('editquestion')
@@ -343,7 +343,7 @@ module.exports = {
         }
     },
 
-    // /deletequestion command
+    // ==================== /deletequestion COMMAND ====================
     deleteQuestion: {
         data: new SlashCommandBuilder()
             .setName('deletequestion')
@@ -399,7 +399,7 @@ module.exports = {
         }
     },
 
-    // /testquestion command
+    // ==================== /testquestion COMMAND ====================
     testQuestion: {
         data: new SlashCommandBuilder()
             .setName('testquestion')
