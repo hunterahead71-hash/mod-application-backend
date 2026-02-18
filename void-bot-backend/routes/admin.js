@@ -7,7 +7,95 @@ const { escapeHtml, isTestUser } = require("../utils/helpers");
 const { logger } = require("../utils/logger");
 
 const router = express.Router();
+// ==================== FUNCTION TO UPDATE DISCORD MESSAGE ====================
+async function updateDiscordMessage(appId, status, adminName, reason = '') {
+  try {
+    const { getClient, ensureReady } = require("../config/discord");
+    const bot = getClient();
+    
+    if (!bot || !await ensureReady() || !process.env.DISCORD_CHANNEL_ID) {
+      logger.warn("Cannot update Discord message: Bot not ready or channel not configured");
+      return false;
+    }
 
+    // Get the channel
+    const channel = await bot.channels.fetch(process.env.DISCORD_CHANNEL_ID);
+    if (!channel) {
+      logger.error(`Channel ${process.env.DISCORD_CHANNEL_ID} not found`);
+      return false;
+    }
+
+    // Fetch recent messages (limit 100)
+    const messages = await channel.messages.fetch({ limit: 100 });
+    
+    for (const [msgId, msg] of messages) {
+      if (msg.embeds && msg.embeds.length > 0) {
+        const embed = msg.embeds[0];
+        const footerText = embed.footer?.text || '';
+        
+        // Look for app ID in footer (format: "ID: 123")
+        if (footerText.includes(appId.toString())) {
+          logger.info(`Found Discord message ${msgId} for app ${appId}`);
+          
+          // Create updated embed
+          const updatedEmbed = {
+            ...embed.toJSON(),
+            color: status === 'accepted' ? 0x10b981 : 0xed4245,
+          };
+
+          // Remove any existing review fields
+          const fields = embed.fields?.filter(f => 
+            !f.name.includes('Accepted') && 
+            !f.name.includes('Rejected') &&
+            !f.name.includes('Reason')
+          ) || [];
+
+          // Add new review field
+          fields.push({
+            name: status === 'accepted' ? "✅ Accepted By" : "❌ Rejected By",
+            value: adminName,
+            inline: true
+          });
+
+          // Add reason if rejection
+          if (status === 'rejected' && reason) {
+            fields.push({
+              name: "📝 Reason",
+              value: reason.substring(0, 100),
+              inline: false
+            });
+          }
+
+          updatedEmbed.fields = fields;
+
+          // Update the message (remove buttons)
+          await msg.edit({ 
+            embeds: [updatedEmbed], 
+            components: [] 
+          });
+
+          logger.success(`✅ Updated Discord message ${msgId} to ${status}`);
+          
+          // Store message ID in database
+          try {
+            await supabase
+              .from("applications")
+              .update({ discord_message_id: msgId })
+              .eq("id", appId);
+          } catch (dbError) {}
+
+          return true;
+        }
+      }
+    }
+
+    logger.warn(`No Discord message found for app ${appId}`);
+    return false;
+  } catch (error) {
+    logger.error("❌ Error updating Discord message:", error.message);
+    return false;
+  }
+}
 // ==================== CREATE TABLES IF NOT EXISTS ====================
 async function ensureTables() {
   try {
@@ -1540,6 +1628,14 @@ router.post("/accept/:id", requireAdmin, async (req, res) => {
     if (fetchError || !application) {
       return res.status(404).json({ success: false, error: "Application not found" });
     }
+
+    // Check if already processed
+    if (application.status !== 'pending') {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Application already ${application.status} on ${new Date(application.reviewed_at).toLocaleString()}`
+      });
+    }
     
     // Update database
     await supabase
@@ -1552,30 +1648,35 @@ router.post("/accept/:id", requireAdmin, async (req, res) => {
       })
       .eq("id", appId);
     
-    // Try role assignment
+    // Try role assignment (background)
     if (!isTestUser(application.discord_username, application.discord_id)) {
       setTimeout(async () => {
         try {
           const { assignModRole } = require("../utils/discordHelpers");
           const result = await assignModRole(application.discord_id, application.discord_username);
-          
-          // Update the Discord message if exists
-          await updateDiscordMessage(appId, 'accepted', req.session.user.username);
-          
+          logger.info(`Role assignment result:`, result);
         } catch (roleError) {
           logger.error(`Role assignment error:`, roleError.message);
         }
       }, 100);
     }
+
+    // Update Discord message
+    setTimeout(async () => {
+      await updateDiscordMessage(appId, 'accepted', req.session.user.username);
+    }, 500);
     
-    res.json({ success: true, message: "Application accepted" });
+    res.json({ 
+      success: true, 
+      message: "Application accepted",
+      note: "Discord message will be updated shortly"
+    });
     
   } catch (err) {
     logger.error("Accept error:", err.message);
     res.json({ success: true, message: "Application accepted" });
   }
 });
-
 // Reject endpoint
 router.post("/reject/:id", requireAdmin, async (req, res) => {
   const appId = req.params.id;
@@ -1592,6 +1693,14 @@ router.post("/reject/:id", requireAdmin, async (req, res) => {
     
     if (fetchError || !application) {
       return res.status(404).json({ success: false, error: "Application not found" });
+    }
+
+    // Check if already processed
+    if (application.status !== 'pending') {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Application already ${application.status} on ${new Date(application.reviewed_at).toLocaleString()}`
+      });
     }
     
     // Update database
@@ -1611,24 +1720,28 @@ router.post("/reject/:id", requireAdmin, async (req, res) => {
       setTimeout(async () => {
         try {
           await sendRejectionDM(application.discord_id, application.discord_username, reason);
-          
-          // Update the Discord message if exists
-          await updateDiscordMessage(appId, 'rejected', req.session.user.username, reason);
-          
         } catch (e) {
           logger.error("Background DM error:", e.message);
         }
       }, 100);
     }
+
+    // Update Discord message
+    setTimeout(async () => {
+      await updateDiscordMessage(appId, 'rejected', req.session.user.username, reason);
+    }, 500);
     
-    res.json({ success: true, message: "Application rejected" });
+    res.json({ 
+      success: true, 
+      message: "Application rejected",
+      note: "Discord message will be updated shortly"
+    });
     
   } catch (err) {
     logger.error("Reject error:", err.message);
     res.json({ success: true, message: "Application rejected" });
   }
 });
-
 // Function to update Discord message
 async function updateDiscordMessage(appId, status, adminName, reason = '') {
   try {
