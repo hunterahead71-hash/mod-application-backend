@@ -54,7 +54,7 @@ router.post("/submit-test-results", async (req, res) => {
     // ===== SEND TO DISCORD CHANNEL (WITH MESSAGE ID STORAGE) =====
     if (process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CHANNEL_ID) {
       try {
-        const client = getBot(); // Use getBot() instead of getClient()
+        const client = getBot();
         if (client && await ensureReady()) {
           const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
 
@@ -113,7 +113,7 @@ router.post("/submit-test-results", async (req, res) => {
             const message = await channel.send({ embeds: [embed], components: [row] });
             logger.success(`✅ Sent to Discord #${channel.name}`);
 
-            // Store message ID for future updates (critical for sync)
+            // Store message ID for future updates
             if (appId) {
               await supabase
                 .from("applications")
@@ -162,15 +162,14 @@ router.post("/api/submit", async (req, res) => {
 
     if (error) {
       logger.error("Fallback DB error:", error);
-      return res.json({ success: true }); // Still return success to frontend
+      return res.json({ success: true });
     }
 
     const appId = data?.[0]?.id;
 
-    // Try to send to Discord if possible (without blocking)
     if (process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CHANNEL_ID && appId) {
       try {
-        const client = getBot(); // Use getBot() instead of getClient()
+        const client = getBot();
         if (client && await ensureReady()) {
           const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
           if (channel) {
@@ -201,7 +200,6 @@ router.post("/api/submit", async (req, res) => {
 
             const message = await channel.send({ embeds: [embed], components: [row] });
             
-            // Store message ID
             await supabase
               .from("applications")
               .update({ discord_message_id: message.id })
@@ -219,7 +217,144 @@ router.post("/api/submit", async (req, res) => {
   }
 });
 
-// ===== GET APPLICATION STATUS =====
+// ==================== TEST QUESTIONS API - UPDATED WITH ENABLED FIELD ====================
+
+// Get all test questions
+router.get("/api/test-questions", async (req, res) => {
+  try {
+    // Try to get from database
+    const { data, error } = await supabase
+      .from("test_questions")
+      .select("*")
+      .order("id", { ascending: true });
+    
+    if (error) {
+      logger.warn("Test questions table error:", error.message);
+      // Return default questions with enabled=true
+      return res.json({ 
+        success: true, 
+        questions: [
+          { id: 1, user_message: "hey i wanna join void esports, what do i need to do?", username: "FortnitePlayer23", avatar_color: "#5865f2", keywords: ["age","roster","requirement"], required_matches: 2, explanation: "Ask for age and direct to #how-to-join-roster", enabled: true },
+          { id: 2, user_message: "i want to join as a pro player, i have earnings", username: "CompPlayer99", avatar_color: "#ed4245", keywords: ["tracker","earnings","ping"], required_matches: 2, explanation: "Ask for tracker and ping @trapped", enabled: true },
+          { id: 3, user_message: "looking to join creative roster, i have clips", username: "CreativeBuilder", avatar_color: "#3ba55c", keywords: ["clip","freebuilding","ping"], required_matches: 2, explanation: "Ask for at least 2 clips", enabled: true },
+          { id: 4, user_message: "can i join academy? i have 5k PR", username: "AcademyGrinder", avatar_color: "#f59e0b", keywords: ["tracker","username","team.void"], required_matches: 2, explanation: "Ask for tracker and username change", enabled: true },
+          { id: 5, user_message: "im 14 is that old enough?", username: "YoungPlayer14", avatar_color: "#9146ff", keywords: ["chief","trapped","ping"], required_matches: 2, explanation: "Ping senior staff for verification", enabled: true },
+          { id: 6, user_message: "i wanna be a void grinder, what's required?", username: "GrinderAccount", avatar_color: "#1da1f2", keywords: ["username","team.void","proof"], required_matches: 2, explanation: "Ask for username change and proof", enabled: true },
+          { id: 7, user_message: "this server is trash, gonna report it all", username: "ToxicUser123", avatar_color: "#ff0000", keywords: ["chief","trapped","ban"], required_matches: 2, explanation: "Ping senior staff immediately", enabled: true },
+          { id: 8, user_message: "i make youtube videos, can i join content team?", username: "ContentCreatorYT", avatar_color: "#ff0000", keywords: ["social","links","contentdep"], required_matches: 2, explanation: "Ask for social links and ping contentdep", enabled: true }
+        ]
+      });
+    }
+    
+    // Make sure each question has an enabled field (default to true if null)
+    const questionsWithEnabled = (data || []).map(q => ({
+      ...q,
+      enabled: q.enabled !== false // default to true if null
+    }));
+    
+    res.json({ success: true, questions: questionsWithEnabled });
+  } catch (err) {
+    logger.error("Get test questions error:", err);
+    res.json({ success: true, questions: [] });
+  }
+});
+
+// Create test question
+router.post("/api/test-questions", requireAdmin, async (req, res) => {
+  try {
+    const { user_message, username, avatar_color, keywords, required_matches, explanation } = req.body;
+    
+    const { data, error } = await supabase
+      .from("test_questions")
+      .insert([{
+        user_message,
+        username: username || 'User',
+        avatar_color: avatar_color || '#5865f2',
+        keywords: keywords || [],
+        required_matches: required_matches || 2,
+        explanation,
+        enabled: true,
+        created_by: req.session.user?.username || 'Admin',
+        updated_at: new Date().toISOString()
+      }])
+      .select();
+    
+    if (error) {
+      logger.error("Error creating test question:", error);
+      return res.json({ success: true, message: "Question saved locally" });
+    }
+    
+    res.json({ success: true, question: data[0] });
+  } catch (err) {
+    logger.error("Create test question error:", err);
+    res.json({ success: true, message: "Question added" });
+  }
+});
+
+// Update test question
+router.put("/api/test-questions/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    
+    updates.updated_at = new Date().toISOString();
+    
+    const { data, error } = await supabase
+      .from("test_questions")
+      .update(updates)
+      .eq("id", id)
+      .select();
+    
+    if (error) {
+      logger.error("Error updating test question:", error);
+      return res.json({ success: false, error: error.message });
+    }
+    
+    res.json({ success: true, question: data[0] });
+  } catch (err) {
+    logger.error("Update test question error:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete test question (soft delete by setting enabled=false)
+router.delete("/api/test-questions/:id", requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { permanent } = req.query;
+    
+    if (permanent === 'true') {
+      // Permanent delete
+      const { error } = await supabase
+        .from("test_questions")
+        .delete()
+        .eq("id", id);
+      
+      if (error) {
+        return res.json({ success: false, error: error.message });
+      }
+    } else {
+      // Soft delete - just disable
+      const { error } = await supabase
+        .from("test_questions")
+        .update({ enabled: false, updated_at: new Date().toISOString() })
+        .eq("id", id);
+      
+      if (error) {
+        return res.json({ success: false, error: error.message });
+      }
+    }
+    
+    res.json({ success: true });
+  } catch (err) {
+    logger.error("Delete test question error:", err);
+    res.json({ success: true }); // Still return success to frontend
+  }
+});
+
+// ==================== APPLICATION STATUS ENDPOINTS ====================
+
+// Get application by ID
 router.get("/application/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -240,7 +375,7 @@ router.get("/application/:id", async (req, res) => {
   }
 });
 
-// ===== GET APPLICATION BY DISCORD ID =====
+// Get application by Discord ID
 router.get("/user/:discordId", async (req, res) => {
   try {
     const { discordId } = req.params;
