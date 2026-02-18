@@ -93,20 +93,26 @@ module.exports = {
                 
                 await interaction.editReply({ embeds: [embed] });
                 
-                // Also send to log channel if configured
-                const logChannel = interaction.guild.channels.cache.get(process.env.LOG_CHANNEL_ID);
-                if (logChannel) {
-                    const logEmbed = new EmbedBuilder()
-                        .setTitle('📝 New Test Question Added')
-                        .setColor(0x5865f2)
-                        .addFields(
-                            { name: 'Added By', value: interaction.user.tag },
-                            { name: 'Question ID', value: data[0].id.toString() },
-                            { name: 'Preview', value: `"${message.substring(0, 100)}"` }
-                        )
-                        .setTimestamp();
-                    
-                    await logChannel.send({ embeds: [logEmbed] });
+                // Optional: Log to channel if configured
+                if (process.env.LOG_CHANNEL_ID) {
+                    try {
+                        const logChannel = await interaction.guild.channels.fetch(process.env.LOG_CHANNEL_ID);
+                        if (logChannel) {
+                            const logEmbed = new EmbedBuilder()
+                                .setTitle('📝 New Test Question Added')
+                                .setColor(0x5865f2)
+                                .addFields(
+                                    { name: 'Added By', value: interaction.user.tag },
+                                    { name: 'Question ID', value: data[0].id.toString() },
+                                    { name: 'Preview', value: `"${message.substring(0, 100)}"` }
+                                )
+                                .setTimestamp();
+                            
+                            await logChannel.send({ embeds: [logEmbed] });
+                        }
+                    } catch (logError) {
+                        // Silently fail if log channel doesn't exist
+                    }
                 }
                 
             } catch (error) {
@@ -171,7 +177,7 @@ module.exports = {
                     });
                 });
                 
-                embed.setFooter({ text: `Use /viewquestion id:XX to see full details` });
+                embed.setFooter({ text: 'Use /viewquestion id:XX to see full details' });
                 
                 await interaction.editReply({ embeds: [embed] });
                 
@@ -223,7 +229,7 @@ module.exports = {
                         { name: 'Added By', value: question.created_by || 'Unknown', inline: true },
                         { name: 'Last Updated', value: new Date(question.updated_at).toLocaleString(), inline: true }
                     )
-                    .setFooter({ text: `Use /editquestion to modify` });
+                    .setFooter({ text: 'Use /editquestion to modify' });
                 
                 await interaction.editReply({ embeds: [embed] });
                 
