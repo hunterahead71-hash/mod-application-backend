@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActivityType, Partials, EmbedBuilder } = require("discord.js");
+const { Client, GatewayIntentBits, ActivityType, Partials, EmbedBuilder, REST, Routes } = require("discord.js");
 const { logger } = require("../utils/logger");
 const { supabase } = require("./supabase");
 
@@ -26,6 +26,45 @@ const client = new Client({
 let botReady = false;
 let loginAttempts = 0;
 
+// ==================== AUTO-REGISTER SLASH COMMANDS ====================
+async function registerSlashCommands() {
+  try {
+    // Dynamically import question commands
+    let questionCommands;
+    try {
+      questionCommands = require('../commands/questionCommands');
+    } catch (error) {
+      logger.warn("⚠️ Question commands not found, skipping registration");
+      return;
+    }
+    
+    const commands = [
+      questionCommands.addQuestion.data.toJSON(),
+      questionCommands.listQuestions.data.toJSON(),
+      questionCommands.viewQuestion.data.toJSON(),
+      questionCommands.editQuestion.data.toJSON(),
+      questionCommands.deleteQuestion.data.toJSON(),
+      questionCommands.testQuestion.data.toJSON()
+    ];
+
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+    
+    logger.info('🔄 Auto-registering slash commands...');
+    
+    await rest.put(
+      Routes.applicationGuildCommands(
+        process.env.DISCORD_CLIENT_ID, 
+        process.env.DISCORD_GUILD_ID
+      ),
+      { body: commands }
+    );
+    
+    logger.success('✅ Slash commands registered automatically!');
+  } catch (error) {
+    logger.error('❌ Failed to auto-register commands:', error.message);
+  }
+}
+
 // ==================== DISCORD.JS v15 FIX: Use 'clientReady' not 'ready' ====================
 client.on('clientReady', async () => {
   botReady = true;
@@ -33,6 +72,9 @@ client.on('clientReady', async () => {
   
   logger.success(`✅ Discord bot ready as ${client.user.tag}`);
   logger.info(`📊 Servers: ${client.guilds.cache.size}`);
+  
+  // Auto-register slash commands on startup
+  await registerSlashCommands();
   
   client.guilds.cache.forEach(guild => {
     logger.info(`   - ${guild.name} (${guild.id})`);
@@ -87,7 +129,7 @@ client.on('warn', (warning) => {
   logger.warn('⚠️ Discord client warning:', warning);
 });
 
-// ==================== BUTTON HANDLERS ====================
+// ==================== BUTTON AND SLASH COMMAND HANDLERS ====================
 client.on('interactionCreate', async (interaction) => {
   // Handle button interactions
   if (interaction.isButton()) {
