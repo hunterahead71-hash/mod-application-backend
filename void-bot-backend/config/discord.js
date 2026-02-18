@@ -94,6 +94,13 @@ client.on('interactionCreate', async (interaction) => {
   logger.info(`🔘 Button clicked: ${interaction.customId} by ${interaction.user.tag}`);
 
   try {
+    // IMMEDIATELY defer the interaction to prevent timeout
+    // This is CRITICAL to fix "Unknown interaction" errors
+    await interaction.deferUpdate().catch(err => {
+      logger.error(`Failed to defer interaction: ${err.message}`);
+      // Continue anyway
+    });
+
     // Lazy load helpers to avoid circular dependency
     if (!discordHelpers) {
       discordHelpers = require("../utils/discordHelpers");
@@ -110,17 +117,17 @@ client.on('interactionCreate', async (interaction) => {
     }
   } catch (error) {
     logger.error("❌ Button handler error:", error);
-    await interaction.reply({ 
-      content: '❌ Error processing button. Check logs.', 
-      ephemeral: true 
-    }).catch(() => {});
+    try {
+      await interaction.followUp({ 
+        content: '❌ Error processing button. Check logs.', 
+        ephemeral: true 
+      }).catch(() => {});
+    } catch {}
   }
 });
 
 // ==================== ACCEPT HANDLER ====================
 async function handleAccept(interaction, appId, discordId, helpers) {
-  await interaction.deferReply({ ephemeral: true });
-
   try {
     // Get application
     const { data: app, error } = await supabase
@@ -192,29 +199,32 @@ async function handleAccept(interaction, appId, discordId, helpers) {
 
 // ==================== REJECT HANDLER ====================
 async function handleReject(interaction, appId, discordId, helpers) {
-  const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
-
-  const modal = new ModalBuilder()
-    .setCustomId(`reject_${appId}_${discordId}`)
-    .setTitle('Reject Application');
-
-  const reasonInput = new TextInputBuilder()
-    .setCustomId('reason')
-    .setLabel('Rejection Reason')
-    .setStyle(TextInputStyle.Paragraph)
-    .setPlaceholder('Enter reason for rejection...')
-    .setRequired(true);
-
-  modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
-  await interaction.showModal(modal);
-
   try {
+    const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
+
+    const modal = new ModalBuilder()
+      .setCustomId(`reject_modal_${appId}`)
+      .setTitle('Reject Application');
+
+    const reasonInput = new TextInputBuilder()
+      .setCustomId('reason')
+      .setLabel('Rejection Reason')
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder('Enter reason for rejection...')
+      .setRequired(true)
+      .setValue('Insufficient score or protocol knowledge');
+
+    modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
+    
+    // Show modal (we already deferred, so this is fine)
+    await interaction.showModal(modal);
+
     const modalSubmit = await interaction.awaitModalSubmit({
-      filter: i => i.customId === `reject_${appId}_${discordId}`,
+      filter: i => i.customId === `reject_modal_${appId}`,
       time: 60000
     });
 
-    await modalSubmit.deferReply({ ephemeral: true });
+    await modalSubmit.deferUpdate();
     const reason = modalSubmit.fields.getTextInputValue('reason');
 
     // Get application
@@ -279,8 +289,6 @@ async function handleReject(interaction, appId, discordId, helpers) {
 
 // ==================== CONVERSATION HANDLER ====================
 async function handleConvo(interaction, appId) {
-  await interaction.deferReply({ ephemeral: true });
-
   try {
     const { data: app, error } = await supabase
       .from('applications')
@@ -352,9 +360,15 @@ function initialize() {
   startWithRetry();
 }
 
+// Helper function to get bot (fixes "getBot is not a function" error)
+function getBot() {
+  return client;
+}
+
 module.exports = {
   client,
   getClient: () => client,
+  getBot, // Add this alias
   botReady: () => botReady,
   ensureReady: async () => {
     if (botReady && client.isReady()) return true;
