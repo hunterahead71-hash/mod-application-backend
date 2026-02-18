@@ -57,7 +57,7 @@ async function sendDMToUser(discordId, title, description, color, footer = null)
   }
 }
 
-// MODIFIED: Assign multiple roles from comma-separated MOD_ROLE_ID env variable
+// FIXED: Actually assign multiple roles
 async function assignModRole(discordId, discordUsername = 'User') {
   logger.info(`\n🎯 ATTEMPTING TO ASSIGN MOD ROLES`);
   logger.info(`   User: ${discordUsername} (${discordId})`);
@@ -157,7 +157,7 @@ async function assignModRole(discordId, discordUsername = 'User') {
       }
     }
     
-    // Send welcome DM only if at least one role was assigned (optional)
+    // Send welcome DM only if at least one role was assigned
     let dmSent = false;
     if (assignedRoles.length > 0) {
       const roleNames = assignedRoles.map(r => r.name).join(', ');
@@ -193,7 +193,7 @@ async function assignModRole(discordId, discordUsername = 'User') {
   }
 }
 
-// Function to send rejection DM (unchanged)
+// Function to send rejection DM
 async function sendRejectionDM(discordId, discordUsername, reason = "Not specified") {
   try {
     logger.info(`📨 Sending rejection DM to ${discordUsername} (${discordId})`);
