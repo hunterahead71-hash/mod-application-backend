@@ -2,6 +2,7 @@ const express = require("express");
 const { supabase } = require("../config/supabase");
 const { logger } = require("../utils/logger");
 const { getClient, ensureReady, getBot } = require("../config/discord");
+const { requireAdmin } = require("../middleware/auth"); // ADD THIS LINE
 
 const router = express.Router();
 
@@ -219,7 +220,7 @@ router.post("/api/submit", async (req, res) => {
 
 // ==================== TEST QUESTIONS API - UPDATED WITH ENABLED FIELD ====================
 
-// Get all test questions
+// Get all test questions (public - no auth required for fetching questions)
 router.get("/api/test-questions", async (req, res) => {
   try {
     // Try to get from database
@@ -259,7 +260,7 @@ router.get("/api/test-questions", async (req, res) => {
   }
 });
 
-// Create test question
+// Create test question (admin only)
 router.post("/api/test-questions", requireAdmin, async (req, res) => {
   try {
     const { user_message, username, avatar_color, keywords, required_matches, explanation } = req.body;
@@ -291,7 +292,7 @@ router.post("/api/test-questions", requireAdmin, async (req, res) => {
   }
 });
 
-// Update test question
+// Update test question (admin only)
 router.put("/api/test-questions/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
@@ -317,7 +318,7 @@ router.put("/api/test-questions/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// Delete test question (soft delete by setting enabled=false)
+// Delete test question (admin only) - soft delete by setting enabled=false
 router.delete("/api/test-questions/:id", requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
