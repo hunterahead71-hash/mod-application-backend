@@ -186,67 +186,76 @@ client.on('interactionCreate', async (interaction) => {
   }
   
   // ==================== SLASH COMMAND HANDLERS ====================
-  if (interaction.isChatInputCommand()) {
-    // Dynamically import commands to avoid circular dependency
+  // In your discord.js file, replace the slash command section with this:
+if (interaction.isChatInputCommand()) {
+    // IMMEDIATELY defer if not already deferred
+    if (!interaction.deferred && !interaction.replied) {
+        await interaction.deferReply({ ephemeral: true }).catch(err => {
+            logger.error('Failed to defer:', err);
+        });
+    }
+    
+    // Dynamically import commands
     let questionCommands;
     try {
-      questionCommands = require('../commands/questionCommands');
+        questionCommands = require('../commands/questionCommands');
     } catch (error) {
-      logger.error("Failed to load question commands:", error.message);
-      return interaction.reply({ 
-        content: '❌ Command system not available. Please check server logs.', 
-        ephemeral: true 
-      });
+        logger.error("Failed to load question commands:", error.message);
+        return interaction.editReply({ 
+            content: '❌ Command system not available. Please check server logs.', 
+            ephemeral: true 
+        }).catch(() => {});
     }
     
     const { commandName } = interaction;
     logger.info(`🎮 Slash command: /${commandName} by ${interaction.user.tag}`);
     
     try {
-      switch (commandName) {
-        case 'addquestion':
-          await questionCommands.addQuestion.execute(interaction);
-          break;
-        case 'listquestions':
-          await questionCommands.listQuestions.execute(interaction);
-          break;
-        case 'viewquestion':
-          await questionCommands.viewQuestion.execute(interaction);
-          break;
-        case 'editquestion':
-          await questionCommands.editQuestion.execute(interaction);
-          break;
-        case 'deletequestion':
-          await questionCommands.deleteQuestion.execute(interaction);
-          break;
-        case 'testquestion':
-          await questionCommands.testQuestion.execute(interaction);
-          break;
-        default:
-          await interaction.reply({ 
-            content: '❌ Unknown command.', 
-            ephemeral: true 
-          });
-      }
+        switch (commandName) {
+            case 'addquestion':
+                await questionCommands.addQuestion.execute(interaction);
+                break;
+            case 'listquestions':
+                await questionCommands.listQuestions.execute(interaction);
+                break;
+            case 'viewquestion':
+                await questionCommands.viewQuestion.execute(interaction);
+                break;
+            case 'editquestion':
+                await questionCommands.editQuestion.execute(interaction);
+                break;
+            case 'deletequestion':
+                await questionCommands.deleteQuestion.execute(interaction);
+                break;
+            case 'testquestion':
+                await questionCommands.testQuestion.execute(interaction);
+                break;
+            default:
+                await interaction.editReply({ 
+                    content: '❌ Unknown command.', 
+                    ephemeral: true 
+                }).catch(() => {});
+        }
     } catch (error) {
-      logger.error(`❌ Error executing /${commandName}:`, error);
-      
-      // Check if already replied or deferred
-      if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ 
-          content: '❌ There was an error executing this command.', 
-          ephemeral: true 
-        }).catch(() => {});
-      } else {
-        await interaction.reply({ 
-          content: '❌ There was an error executing this command.', 
-          ephemeral: true 
-        }).catch(() => {});
-      }
+        logger.error(`❌ Error executing /${commandName}:`, error);
+        
+        try {
+            if (interaction.deferred) {
+                await interaction.editReply({ 
+                    content: '❌ There was an error executing this command.', 
+                    ephemeral: true 
+                });
+            } else if (!interaction.replied) {
+                await interaction.reply({ 
+                    content: '❌ There was an error executing this command.', 
+                    ephemeral: true 
+                });
+            }
+        } catch (replyError) {
+            logger.error('Failed to send error message:', replyError);
+        }
     }
-  }
-});
-
+}
 // ==================== ACCEPT HANDLER ====================
 async function handleAccept(interaction, appId, discordId, helpers) {
   try {
