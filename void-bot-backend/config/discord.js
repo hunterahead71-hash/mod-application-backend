@@ -150,14 +150,6 @@ async function handleAcceptButton(interaction, appId, discordId) {
       })
       .eq("id", appId);
     
-    // Assign role
-    let roleResult = null;
-    try {
-      roleResult = await assignModRole(discordId, application.discord_username);
-    } catch (roleError) {
-      logger.error("Role assignment error:", roleError.message);
-    }
-    
     // Update the original message
     if (interaction.message && interaction.message.embeds.length > 0) {
       const embed = interaction.message.embeds[0];
@@ -180,10 +172,19 @@ async function handleAcceptButton(interaction, appId, discordId) {
       });
     }
     
+    // FIX: Actually assign the role and send DM
+    let roleResult = null;
+    try {
+      roleResult = await assignModRole(discordId, application.discord_username);
+      logger.success(`✅ Role assignment attempted: ${JSON.stringify(roleResult)}`);
+    } catch (roleError) {
+      logger.error("Role assignment error:", roleError.message);
+    }
+    
     // Send success message
     let replyMessage = `✅ Application accepted!`;
     if (roleResult && roleResult.success) {
-      replyMessage += `\nRoles assigned: ${roleResult.assigned.map(r => r.name).join(', ')}`;
+      replyMessage += `\n✅ Roles assigned: ${roleResult.assigned.map(r => r.name).join(', ')}`;
     } else if (roleResult) {
       replyMessage += `\n⚠️ Role assignment had issues: ${roleResult.error || 'Check logs'}`;
     }
@@ -262,10 +263,11 @@ async function handleRejectButton(interaction, appId, discordId) {
       })
       .eq("id", appId);
     
-    // Send DM
+    // FIX: Actually send the rejection DM
     let dmResult = false;
     try {
       dmResult = await sendRejectionDM(discordId, application.discord_username, reason);
+      logger.success(`✅ Rejection DM attempted: ${dmResult}`);
     } catch (dmError) {
       logger.error("DM error:", dmError.message);
     }
@@ -298,7 +300,7 @@ async function handleRejectButton(interaction, appId, discordId) {
     }
     
     await modalInteraction.editReply({ 
-      content: `✅ Application rejected with reason: "${reason}"\n${dmResult ? 'DM sent to user.' : '⚠️ Could not send DM (user may have DMs disabled).'}` 
+      content: `✅ Application rejected with reason: "${reason}"\n${dmResult ? '✅ DM sent to user.' : '⚠️ Could not send DM (user may have DMs disabled).'}` 
     });
     
   } catch (error) {
