@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActivityType, Partials, EmbedBuilder, REST, Routes } = require("discord.js");
+const { Client, GatewayIntentBits, ActivityType, Partials, EmbedBuilder } = require("discord.js");
 const { logger } = require("../utils/logger");
 const { supabase } = require("./supabase");
 
@@ -26,63 +26,6 @@ const client = new Client({
 let botReady = false;
 let loginAttempts = 0;
 
-// ==================== AUTO-REGISTER SLASH COMMANDS FOR ALL SERVERS ====================
-async function registerSlashCommands() {
-  try {
-    logger.info('🔄 Starting slash command registration for ALL servers...');
-    
-    // Load commands
-    let questionCommands;
-    try {
-      questionCommands = require('../commands/questionCommands');
-      logger.info('✅ Successfully loaded question commands');
-    } catch (error) {
-      logger.warn("⚠️ Question commands not found, skipping registration");
-      return;
-    }
-    
-    const commands = [
-      questionCommands.addQuestion.data.toJSON(),
-      questionCommands.listQuestions.data.toJSON(),
-      questionCommands.viewQuestion.data.toJSON(),
-      questionCommands.editQuestion.data.toJSON(),
-      questionCommands.deleteQuestion.data.toJSON(),
-      questionCommands.testQuestion.data.toJSON()
-    ];
-
-    logger.info(`📋 Prepared ${commands.length} commands for registration`);
-    
-    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
-    
-    // Check if bot is in any servers
-    if (client.guilds.cache.size === 0) {
-      logger.warn("⚠️ Bot is not in any servers yet!");
-      return;
-    }
-    
-    // Register for EACH guild the bot is in
-    for (const [guildId, guild] of client.guilds.cache) {
-      try {
-        logger.info(`🔄 Registering commands for guild: ${guild.name} (${guildId})...`);
-        
-        await rest.put(
-          Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, guildId),
-          { body: commands }
-        );
-        
-        logger.success(`✅ Registered commands for ${guild.name}`);
-      } catch (guildError) {
-        logger.error(`❌ Failed to register for guild ${guildId}:`, guildError.message);
-      }
-    }
-    
-    logger.success('✅ Finished registering commands for all servers!');
-    
-  } catch (error) {
-    logger.error('❌ Failed to register commands:', error);
-  }
-}
-
 // ==================== DISCORD.JS v15 FIX: Use 'clientReady' not 'ready' ====================
 client.on('clientReady', async () => {
   botReady = true;
@@ -90,9 +33,6 @@ client.on('clientReady', async () => {
   
   logger.success(`✅ Discord bot ready as ${client.user.tag}`);
   logger.info(`📊 Servers: ${client.guilds.cache.size}`);
-  
-  // Auto-register slash commands on startup for ALL servers
-  await registerSlashCommands();
   
   client.guilds.cache.forEach(guild => {
     logger.info(`   - ${guild.name} (${guild.id})`);
@@ -147,113 +87,40 @@ client.on('warn', (warning) => {
   logger.warn('⚠️ Discord client warning:', warning);
 });
 
-// ==================== BUTTON AND SLASH COMMAND HANDLERS ====================
+// ==================== BUTTON HANDLERS ====================
 client.on('interactionCreate', async (interaction) => {
-  // Handle button interactions
-  if (interaction.isButton()) {
-    logger.info(`🔘 Button clicked: ${interaction.customId} by ${interaction.user.tag}`);
-
-    try {
-      // IMMEDIATELY defer the interaction to prevent timeout
-      await interaction.deferUpdate().catch(err => {
-        logger.error(`Failed to defer interaction: ${err.message}`);
-      });
-
-      // Lazy load helpers to avoid circular dependency
-      if (!discordHelpers) {
-        discordHelpers = require("../utils/discordHelpers");
-      }
-
-      const [action, appId, discordId] = interaction.customId.split('_');
-
-      if (action === 'accept') {
-        await handleAccept(interaction, appId, discordId, discordHelpers);
-      } else if (action === 'reject') {
-        await handleReject(interaction, appId, discordId, discordHelpers);
-      } else if (action === 'convo') {
-        await handleConvo(interaction, appId);
-      }
-    } catch (error) {
-      logger.error("❌ Button handler error:", error);
-      try {
-        await interaction.followUp({ 
-          content: '❌ Error processing button. Check logs.', 
-          ephemeral: true 
-        }).catch(() => {});
-      } catch {}
-    }
-    return;
-  }
+  if (!interaction.isButton()) return;
   
-  // ==================== SLASH COMMAND HANDLERS ====================
-  if (interaction.isChatInputCommand()) {
-    // IMMEDIATELY defer if not already deferred
-    if (!interaction.deferred && !interaction.replied) {
-      await interaction.deferReply({ ephemeral: true }).catch(err => {
-        logger.error('Failed to defer:', err);
-      });
+  logger.info(`🔘 Button clicked: ${interaction.customId} by ${interaction.user.tag}`);
+
+  try {
+    // IMMEDIATELY defer the interaction to prevent timeout
+    await interaction.deferUpdate().catch(err => {
+      logger.error(`Failed to defer interaction: ${err.message}`);
+    });
+
+    // Lazy load helpers to avoid circular dependency
+    if (!discordHelpers) {
+      discordHelpers = require("../utils/discordHelpers");
     }
-    
-    // Dynamically import commands
-    let questionCommands;
+
+    const [action, appId, discordId] = interaction.customId.split('_');
+
+    if (action === 'accept') {
+      await handleAccept(interaction, appId, discordId, discordHelpers);
+    } else if (action === 'reject') {
+      await handleReject(interaction, appId, discordId, discordHelpers);
+    } else if (action === 'convo') {
+      await handleConvo(interaction, appId);
+    }
+  } catch (error) {
+    logger.error("❌ Button handler error:", error);
     try {
-      questionCommands = require('../commands/questionCommands');
-    } catch (error) {
-      logger.error("Failed to load question commands:", error.message);
-      return interaction.editReply({ 
-        content: '❌ Command system not available. Please check server logs.', 
+      await interaction.followUp({ 
+        content: '❌ Error processing button. Check logs.', 
         ephemeral: true 
       }).catch(() => {});
-    }
-    
-    const { commandName } = interaction;
-    logger.info(`🎮 Slash command: /${commandName} by ${interaction.user.tag}`);
-    
-    try {
-      switch (commandName) {
-        case 'addquestion':
-          await questionCommands.addQuestion.execute(interaction);
-          break;
-        case 'listquestions':
-          await questionCommands.listQuestions.execute(interaction);
-          break;
-        case 'viewquestion':
-          await questionCommands.viewQuestion.execute(interaction);
-          break;
-        case 'editquestion':
-          await questionCommands.editQuestion.execute(interaction);
-          break;
-        case 'deletequestion':
-          await questionCommands.deleteQuestion.execute(interaction);
-          break;
-        case 'testquestion':
-          await questionCommands.testQuestion.execute(interaction);
-          break;
-        default:
-          await interaction.editReply({ 
-            content: '❌ Unknown command.', 
-            ephemeral: true 
-          }).catch(() => {});
-      }
-    } catch (error) {
-      logger.error(`❌ Error executing /${commandName}:`, error);
-      
-      try {
-        if (interaction.deferred) {
-          await interaction.editReply({ 
-            content: '❌ There was an error executing this command.', 
-            ephemeral: true 
-          });
-        } else if (!interaction.replied) {
-          await interaction.reply({ 
-            content: '❌ There was an error executing this command.', 
-            ephemeral: true 
-          });
-        }
-      } catch (replyError) {
-        logger.error('Failed to send error message:', replyError);
-      }
-    }
+    } catch {}
   }
 });
 
