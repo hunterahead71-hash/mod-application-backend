@@ -129,11 +129,6 @@ router.post("/submit-test-results", async (req, res) => {
               name: "📊 Score",
               value: `**${scoreValue}/${scoreTotal}**\n${passStatus}`,
               inline: true
-            },
-            {
-              name: "📝 Message Count",
-              value: needsMultipleMessages ? `**${parsedTestResults.messageCount || 1} messages**` : "**Complete transcript attached**",
-              inline: true
             }
           ],
           footer: {
@@ -185,57 +180,11 @@ router.post("/submit-test-results", async (req, res) => {
             // Edit message to add components
             await message.edit({ embeds: [embed], components: [row] });
             
-            // Send conversation log as separate message (only visible to staff)
-            let conversationToSend = conversationLog || answers || "No conversation log provided";
+            // FIX: ONLY send conversation log if it's not already included and if it's not too long
+            // REMOVED the automatic sending of conversation log parts to avoid duplication
+            // The conversation log is now only accessible via the button
             
-            // If conversation is too long, split it
-            const maxLength = 1900;
-            if (conversationToSend.length > maxLength) {
-              logger.info(`Conversation log length: ${conversationToSend.length}, splitting into multiple messages`);
-              
-              // Split by sections
-              const sections = conversationToSend.split('┌──────────────────────────────────────────────────────────────────────────┐');
-              let currentMessage = "";
-              let messageCount = 0;
-              
-              for (let i = 1; i < sections.length; i++) {
-                const section = '┌──────────────────────────────────────────────────────────────────────────┐' + sections[i];
-                
-                if ((currentMessage + section).length > maxLength) {
-                  // Send current message
-                  if (currentMessage) {
-                    await channel.send({ 
-                      content: `**Conversation Log (Part ${messageCount + 1})**\n\`\`\`\n${currentMessage}\n\`\`\``
-                    });
-                    messageCount++;
-                    await new Promise(resolve => setTimeout(resolve, 500));
-                  }
-                  
-                  // Start new message
-                  currentMessage = `PART ${messageCount + 1}\n══════════════════════════════════════════════════════════════════════════════\n` + section;
-                } else {
-                  currentMessage += section;
-                }
-              }
-              
-              // Send last message
-              if (currentMessage) {
-                await channel.send({ 
-                  content: `**Conversation Log (Part ${messageCount + 1})**\n\`\`\`\n${currentMessage}\n\`\`\``
-                });
-                messageCount++;
-              }
-              
-              logger.success(`✅ Sent ${messageCount} conversation log parts`);
-              
-            } else {
-              // Send as single message
-              await channel.send({ 
-                content: `**Complete Conversation Log**\n\`\`\`\n${conversationToSend}\n\`\`\``
-              });
-              
-              logger.success(`✅ Conversation log sent successfully!`);
-            }
+            logger.success(`✅ Main submission message sent with buttons!`);
             
           } else {
             logger.error("❌ Could not fetch channel");
