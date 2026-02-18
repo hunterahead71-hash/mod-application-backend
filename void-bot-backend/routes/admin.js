@@ -10,8 +10,8 @@ const router = express.Router();
 // ==================== FUNCTION TO UPDATE DISCORD MESSAGE ====================
 async function updateDiscordMessage(appId, status, adminName, reason = '') {
   try {
-    const { getClient, ensureReady } = require("../config/discord");
-    const bot = getClient();
+    const { getBot, ensureReady } = require("../config/discord");
+    const bot = getBot();
     
     if (!bot || !await ensureReady() || !process.env.DISCORD_CHANNEL_ID) {
       logger.warn("Cannot update Discord message: Bot not ready or channel not configured");
