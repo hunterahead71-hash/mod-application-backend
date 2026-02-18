@@ -790,7 +790,7 @@ router.get("/", requireAdmin, async (req, res) => {
                     <div class="app-actions">
                         <button class="action-btn" disabled style="opacity:0.5; background:#1a1a1e; color:#8b8b98;">
                             <i class="fas fa-${app.status === 'accepted' ? 'check' : 'ban'}"></i>
-                            ${app.status === 'accepted' ? 'Accepted' : 'Rejected'}
+                            ${app.status === 'accepted' ? 'Accepted' : 'Rejected'} by ${escapeHtml(app.reviewed_by || 'Unknown')}
                         </button>
                     </div>
                 `;
@@ -1480,8 +1480,7 @@ router.get("/", requireAdmin, async (req, res) => {
                 }
             });
             
-            // Load data on initial
-                        // Load data on initial tab
+            // Load data on initial tab
             setTimeout(() => {
                 loadTestQuestions();
                 loadQuizQuestions();
@@ -1558,7 +1557,11 @@ router.post("/accept/:id", requireAdmin, async (req, res) => {
       setTimeout(async () => {
         try {
           const { assignModRole } = require("../utils/discordHelpers");
-          await assignModRole(application.discord_id, application.discord_username);
+          const result = await assignModRole(application.discord_id, application.discord_username);
+          
+          // Update the Discord message if exists
+          await updateDiscordMessage(appId, 'accepted', req.session.user.username);
+          
         } catch (roleError) {
           logger.error(`Role assignment error:`, roleError.message);
         }
@@ -1608,6 +1611,10 @@ router.post("/reject/:id", requireAdmin, async (req, res) => {
       setTimeout(async () => {
         try {
           await sendRejectionDM(application.discord_id, application.discord_username, reason);
+          
+          // Update the Discord message if exists
+          await updateDiscordMessage(appId, 'rejected', req.session.user.username, reason);
+          
         } catch (e) {
           logger.error("Background DM error:", e.message);
         }
@@ -1621,6 +1628,56 @@ router.post("/reject/:id", requireAdmin, async (req, res) => {
     res.json({ success: true, message: "Application rejected" });
   }
 });
+
+// Function to update Discord message
+async function updateDiscordMessage(appId, status, adminName, reason = '') {
+  try {
+    const { getBot, ensureBotReady } = require("../config/discord");
+    const bot = getBot();
+    
+    if (!bot || !await ensureBotReady() || !process.env.DISCORD_CHANNEL_ID) {
+      return;
+    }
+    
+    const channel = await bot.channels.fetch(process.env.DISCORD_CHANNEL_ID);
+    if (!channel) return;
+    
+    // Try to find the message (simplified - in production you'd store message IDs)
+    const messages = await channel.messages.fetch({ limit: 50 });
+    
+    for (const msg of messages.values()) {
+      if (msg.embeds && msg.embeds.length > 0 && 
+          msg.embeds[0].footer && 
+          msg.embeds[0].footer.text.includes(appId.toString())) {
+        
+        const embed = msg.embeds[0];
+        const updatedEmbed = {
+          ...embed.toJSON(),
+          color: status === 'accepted' ? 0x10b981 : 0xed4245,
+          fields: [
+            ...embed.fields,
+            {
+              name: status === 'accepted' ? "✅ Accepted By" : "❌ Rejected By",
+              value: adminName,
+              inline: true
+            },
+            ...(status === 'rejected' && reason ? [{
+              name: "📝 Reason",
+              value: reason,
+              inline: false
+            }] : [])
+          ]
+        };
+        
+        // Disable buttons by removing components
+        await msg.edit({ embeds: [updatedEmbed], components: [] });
+        break;
+      }
+    }
+  } catch (error) {
+    logger.error("Error updating Discord message:", error.message);
+  }
+}
 
 // ==================== TEST QUESTIONS API ====================
 
