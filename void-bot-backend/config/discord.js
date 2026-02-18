@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, ActivityType, Partials } = require("discord.js");
+const { Client, GatewayIntentBits, ActivityType, Partials, EmbedBuilder } = require("discord.js");
 const { logger } = require("../utils/logger");
 const { supabase } = require("./supabase");
 
@@ -95,10 +95,8 @@ client.on('interactionCreate', async (interaction) => {
 
   try {
     // IMMEDIATELY defer the interaction to prevent timeout
-    // This is CRITICAL to fix "Unknown interaction" errors
     await interaction.deferUpdate().catch(err => {
       logger.error(`Failed to defer interaction: ${err.message}`);
-      // Continue anyway
     });
 
     // Lazy load helpers to avoid circular dependency
@@ -287,12 +285,15 @@ async function handleReject(interaction, appId, discordId, helpers) {
   }
 }
 
-// ==================== CONVERSATION HANDLER ====================
+// ==================== FIXED CONVERSATION HANDLER - SENDS ONLY FORMATTED LOG ====================
 async function handleConvo(interaction, appId) {
   try {
+    logger.info(`📋 Conversation log requested for app ${appId} by ${interaction.user.tag}`);
+
+    // Get application with conversation log
     const { data: app, error } = await supabase
       .from('applications')
-      .select('conversation_log, answers')
+      .select('discord_username, discord_id, score, correct_answers, total_questions, created_at, conversation_log, answers, test_results')
       .eq('id', appId)
       .single();
 
@@ -300,23 +301,150 @@ async function handleConvo(interaction, appId) {
       return interaction.editReply('❌ Application not found.');
     }
 
-    const log = app.conversation_log || app.answers || 'No conversation log available.';
+    // Get the raw log or create one from answers
+    let rawLog = app.conversation_log || app.answers || '';
+    
+    // If no log exists, try to parse from test_results
+    if (!rawLog && app.test_results) {
+      try {
+        const testResults = typeof app.test_results === 'string' 
+          ? JSON.parse(app.test_results) 
+          : app.test_results;
+        
+        if (testResults && testResults.questions) {
+          rawLog = formatQuestionsIntoLog(testResults.questions);
+        }
+      } catch (e) {
+        logger.error('Error parsing test_results:', e);
+      }
+    }
 
-    if (log.length > 1900) {
-      const buffer = Buffer.from(log, 'utf-8');
+    // If still no log, create a minimal one
+    if (!rawLog || rawLog.length < 10) {
+      const score = app.score || `${app.correct_answers || 0}/${app.total_questions || 8}`;
+      rawLog = createMinimalLog(app.discord_username, app.discord_id, score);
+    }
+
+    // Clean up the log - remove any weird characters but preserve formatting
+    const cleanLog = rawLog
+      .replace(/\r\n/g, '\n')
+      .replace(/[^\x20-\x7E\u2500-\u257F\n]/g, '') // Allow box drawing characters
+      .trim();
+
+    // Create the formatted transcript exactly as requested
+    const transcript = formatTranscript(cleanLog, app);
+
+    // Split into chunks if needed (Discord limit is 2000 chars)
+    if (transcript.length <= 1900) {
+      // Send as a single message
       await interaction.editReply({
-        content: `📋 Conversation Log for #${appId}`,
-        files: [{ attachment: buffer, name: `conversation_${appId}.txt` }]
+        content: `\`\`\`\n${transcript}\n\`\`\``,
+        ephemeral: true
       });
     } else {
+      // Send as file attachment
+      const buffer = Buffer.from(transcript, 'utf-8');
       await interaction.editReply({
-        content: `📋 **Conversation Log**\n\`\`\`\n${log}\n\`\`\``
+        content: `📋 **Complete Test Transcript**`,
+        files: [{
+          attachment: buffer,
+          name: `transcript_${app.discord_username}_${appId}.txt`
+        }],
+        ephemeral: true
       });
     }
+
+    logger.success(`✅ Conversation log sent for app ${appId}`);
+
   } catch (error) {
     logger.error("❌ Convo error:", error);
-    await interaction.editReply(`❌ Error: ${error.message}`);
+    await interaction.editReply(`❌ Error loading conversation log: ${error.message}`);
   }
+}
+
+// Helper function to format questions into log
+function formatQuestionsIntoLog(questions) {
+  if (!Array.isArray(questions)) return '';
+  
+  let log = '';
+  questions.forEach((q, index) => {
+    log += `┌──────────────────────────────────────────────────────────────────────────┐\n`;
+    log += `│ QUESTION ${index + 1} of ${questions.length}${q.correct ? ' ✓ PASS' : ' ✗ FAIL'}\n`;
+    log += `├──────────────────────────────────────────────────────────────────────────┤\n`;
+    log += `│ USER: ${q.question || 'Unknown'}\n`;
+    log += `├──────────────────────────────────────────────────────────────────────────┤\n`;
+    log += `│ MOD RESPONSE:\n`;
+    log += `│ ${q.answer || 'No answer provided'}\n`;
+    log += `├──────────────────────────────────────────────────────────────────────────┤\n`;
+    log += `│ EVALUATION:\n`;
+    log += `│ Matches: ${q.matchCount || 0}/${q.requiredMatches || 2}\n`;
+    log += `│ Keywords: ${q.matchedKeywords ? q.matchedKeywords.join(', ') : 'None'}\n`;
+    log += `├──────────────────────────────────────────────────────────────────────────┤\n`;
+    log += `│ CORRECT RESPONSE:\n`;
+    log += `│ ${q.feedback || 'Follow protocol'}\n`;
+    log += `└──────────────────────────────────────────────────────────────────────────┘\n\n`;
+  });
+  return log;
+}
+
+// Helper function to create minimal log
+function createMinimalLog(username, userId, score) {
+  const date = new Date().toLocaleString();
+  const separator = '══════════════════════════════════════════════════════════════════════════════';
+  
+  let log = `${separator}\n`;
+  log += `VOID ESPORTS MODERATOR CERTIFICATION TEST - COMPLETE TRANSCRIPT\n`;
+  log += `${separator}\n`;
+  log += `User: ${username} (${userId})\n`;
+  log += `Date: ${date}\n`;
+  log += `Final Score: ${score}\n`;
+  log += `${separator}\n\n`;
+  log += `No detailed question log available.\n`;
+  log += `${separator}\n`;
+  
+  return log;
+}
+
+// Helper function to format the final transcript
+function formatTranscript(log, app) {
+  const separator = '══════════════════════════════════════════════════════════════════════════════';
+  const score = app.score || `${app.correct_answers || 0}/${app.total_questions || 8}`;
+  const passed = app.correct_answers >= 6 ? 'PASSED ✓' : 'FAILED ✗';
+  const date = app.created_at ? new Date(app.created_at).toLocaleString() : new Date().toLocaleString();
+  
+  // Extract just the Q&A part if it exists, otherwise use the whole log
+  let qaSection = log;
+  
+  // If the log already has the header, remove it to avoid duplication
+  if (log.includes(separator)) {
+    const parts = log.split(separator);
+    if (parts.length >= 3) {
+      // Take everything after the second separator
+      qaSection = parts.slice(2).join(separator).trim();
+    }
+  }
+  
+  // Build the complete transcript exactly as requested
+  let transcript = `${separator}\n`;
+  transcript += `VOID ESPORTS MODERATOR CERTIFICATION TEST - COMPLETE TRANSCRIPT\n`;
+  transcript += `${separator}\n`;
+  transcript += `User: ${app.discord_username} (${app.discord_id})\n`;
+  transcript += `Date: ${date}\n`;
+  transcript += `Final Score: ${score}\n`;
+  transcript += `Result: ${passed}\n`;
+  transcript += `${separator}\n\n`;
+  
+  // Add the Q&A section
+  transcript += qaSection;
+  
+  // Ensure it ends with the separator
+  if (!transcript.endsWith(separator)) {
+    transcript += `\n${separator}\n`;
+    transcript += `END OF TRANSCRIPT - ${score} CORRECT\n`;
+    transcript += `${separator}`;
+  }
+  
+  return transcript;
 }
 
 // ==================== LOGIN ====================
@@ -360,7 +488,7 @@ function initialize() {
   startWithRetry();
 }
 
-// Helper function to get bot (fixes "getBot is not a function" error)
+// Helper function to get bot
 function getBot() {
   return client;
 }
@@ -368,7 +496,7 @@ function getBot() {
 module.exports = {
   client,
   getClient: () => client,
-  getBot, // Add this alias
+  getBot,
   botReady: () => botReady,
   ensureReady: async () => {
     if (botReady && client.isReady()) return true;
