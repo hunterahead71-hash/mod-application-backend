@@ -86,7 +86,47 @@ client.on('error', (error) => {
 client.on('warn', (warning) => {
   logger.warn('⚠️ Discord client warning:', warning);
 });
+// Import command handlers
+const questionCommands = require('./commands/questionCommands');
 
+// In your interactionCreate handler
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    
+    const { commandName } = interaction;
+    
+    try {
+        switch (commandName) {
+            case 'addquestion':
+                await questionCommands.addQuestion.execute(interaction);
+                break;
+            case 'listquestions':
+                await questionCommands.listQuestions.execute(interaction);
+                break;
+            case 'viewquestion':
+                await questionCommands.viewQuestion.execute(interaction);
+                break;
+            case 'editquestion':
+                await questionCommands.editQuestion.execute(interaction);
+                break;
+            case 'deletequestion':
+                await questionCommands.deleteQuestion.execute(interaction);
+                break;
+            case 'testquestion':
+                await questionCommands.testQuestion.execute(interaction);
+                break;
+            default:
+                // Handle other commands
+                break;
+        }
+    } catch (error) {
+        console.error(`Error executing ${commandName}:`, error);
+        await interaction.reply({ 
+            content: 'There was an error executing this command.', 
+            ephemeral: true 
+        });
+    }
+});
 // ==================== BUTTON HANDLERS ====================
 client.on('interactionCreate', async (interaction) => {
   if (!interaction.isButton()) return;
