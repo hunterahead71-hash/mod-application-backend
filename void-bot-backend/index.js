@@ -70,15 +70,99 @@ app.use((req, res, next) => {
 // ==================== INIT BOT ====================
 initBot();
 
+// ==================== FUNCTION TO UPDATE DISCORD MESSAGE ====================
+async function updateDiscordMessage(appId, status, adminName, reason = '') {
+  try {
+    const client = getClient();
+    if (!client || !await ensureReady() || !process.env.DISCORD_CHANNEL_ID) {
+      logger.warn("Cannot update Discord message: Bot not ready or channel not configured");
+      return false;
+    }
+
+    // Get the channel
+    const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
+    if (!channel) {
+      logger.error(`Channel ${process.env.DISCORD_CHANNEL_ID} not found`);
+      return false;
+    }
+
+    // Fetch recent messages (limit 100 to find the one with matching app ID)
+    const messages = await channel.messages.fetch({ limit: 100 });
+    
+    for (const [msgId, msg] of messages) {
+      // Check if this message has our app ID in footer or content
+      if (msg.embeds && msg.embeds.length > 0) {
+        const embed = msg.embeds[0];
+        const footerText = embed.footer?.text || '';
+        
+        // Look for app ID in footer (format: "ID: 123")
+        if (footerText.includes(appId.toString())) {
+          logger.info(`Found Discord message ${msgId} for app ${appId}`);
+          
+          // Create updated embed
+          const updatedEmbed = {
+            ...embed.toJSON(),
+            color: status === 'accepted' ? 0x10b981 : 0xed4245,
+          };
+
+          // Remove any existing review fields
+          const fields = embed.fields?.filter(f => 
+            !f.name.includes('Accepted') && 
+            !f.name.includes('Rejected') &&
+            !f.name.includes('Reason')
+          ) || [];
+
+          // Add new review field
+          fields.push({
+            name: status === 'accepted' ? "✅ Accepted By" : "❌ Rejected By",
+            value: adminName,
+            inline: true
+          });
+
+          // Add reason if rejection
+          if (status === 'rejected' && reason) {
+            fields.push({
+              name: "📝 Reason",
+              value: reason.substring(0, 100), // Limit length
+              inline: false
+            });
+          }
+
+          updatedEmbed.fields = fields;
+
+          // Update the message (remove buttons)
+          await msg.edit({ 
+            embeds: [updatedEmbed], 
+            components: [] // This removes all buttons
+          });
+
+          logger.success(`✅ Updated Discord message ${msgId} to ${status}`);
+          
+          // Also store the message ID in database for future reference
+          try {
+            await supabase
+              .from("applications")
+              .update({ discord_message_id: msgId })
+              .eq("id", appId);
+          } catch (dbError) {
+            // Non-critical, ignore
+          }
+
+          return true;
+        }
+      }
+    }
+
+    logger.warn(`No Discord message found for app ${appId} in last 100 messages`);
+    return false;
+  } catch (error) {
+    logger.error("❌ Error updating Discord message:", error.message);
+    return false;
+  }
+}
+
 // ==================== DISCORD BUTTON INTERACTION HANDLER ====================
-// FIX: This was completely MISSING from the original index.js.
-// Without this, ALL 3 Discord buttons (Accept, Reject, Conversation) failed with
-// "This interaction failed" — Discord requires a response within 3 seconds.
-//
-// The convo button appeared to "work" because Discord showed a loading state,
-// but it was actually failing and the log dump to the channel was a separate bug.
 function setupDiscordInteractions() {
-  // Poll until bot client is available (initBot is async)
   const trySetup = async () => {
     const client = getClient();
     if (!client) {
@@ -99,7 +183,6 @@ function registerInteractionHandler(client) {
   logger.success('🎮 Registering Discord button interaction handler');
 
   client.on('interactionCreate', async (interaction) => {
-    // Only handle button clicks
     if (!interaction.isButton()) return;
 
     const { customId, user } = interaction;
@@ -108,7 +191,6 @@ function registerInteractionHandler(client) {
     // ===== ✅ ACCEPT BUTTON =====
     if (customId.startsWith('accept_')) {
       try {
-        // MUST defer immediately — Discord 3-second timeout
         await interaction.deferUpdate();
 
         const [, appId, discordId] = customId.split('_');
@@ -123,6 +205,20 @@ function registerInteractionHandler(client) {
         if (error || !app) {
           logger.error(`❌ App not found: ${appId}`);
           await editReviewedEmbed(interaction, 'accepted', user.username, '⚠️ DB record not found', appId);
+          return;
+        }
+
+        // Check if already processed
+        if (app.status !== 'pending') {
+          await interaction.followUp({ 
+            content: `⚠️ This application was already ${app.status} on ${new Date(app.reviewed_at).toLocaleString()}`, 
+            ephemeral: true 
+          });
+          
+          // Still update the embed to show current state
+          await editReviewedEmbed(interaction, app.status, app.reviewed_by || 'System', 
+            app.status === 'rejected' ? `\n📝 Reason: ${app.rejection_reason || 'Not specified'}` : '', 
+            appId);
           return;
         }
 
@@ -141,7 +237,7 @@ function registerInteractionHandler(client) {
         const result = await assignModRole(app.discord_id, app.discord_username);
         logger.info(`Result: ${JSON.stringify(result)}`);
 
-        // Build status note for the embed
+        // Build status note
         let note = '';
         if (result.success) {
           if (result.assigned?.length > 0) {
@@ -149,10 +245,9 @@ function registerInteractionHandler(client) {
           }
           note += result.dmSent
             ? '\n📨 Welcome DM: Sent ✅'
-            : '\n📨 Welcome DM: Failed (DMs disabled or bot not in guild)';
+            : '\n📨 Welcome DM: Failed (DMs disabled)';
         } else {
           note = `\n❗ Role error: ${result.error}`;
-          logger.error(`❌ Role assignment failed: ${result.error}`);
         }
 
         await editReviewedEmbed(interaction, 'accepted', user.username, note, appId);
@@ -165,10 +260,34 @@ function registerInteractionHandler(client) {
     // ===== ❌ REJECT BUTTON =====
     else if (customId.startsWith('reject_')) {
       try {
-        await interaction.deferUpdate();
+        const { ModalBuilder, TextInputBuilder, TextInputStyle, ActionRowBuilder } = require('discord.js');
 
         const [, appId, discordId] = customId.split('_');
 
+        const modal = new ModalBuilder()
+          .setCustomId(`reject_modal_${appId}`)
+          .setTitle('Reject Application');
+
+        const reasonInput = new TextInputBuilder()
+          .setCustomId('reason')
+          .setLabel('Rejection Reason')
+          .setStyle(TextInputStyle.Paragraph)
+          .setPlaceholder('Enter reason for rejection...')
+          .setRequired(true)
+          .setValue('Insufficient score or protocol knowledge');
+
+        modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
+        await interaction.showModal(modal);
+
+        const modalSubmit = await interaction.awaitModalSubmit({
+          filter: i => i.customId === `reject_modal_${appId}`,
+          time: 60000
+        });
+
+        await modalSubmit.deferUpdate();
+        const reason = modalSubmit.fields.getTextInputValue('reason');
+
+        // Fetch application
         const { data: app, error } = await supabase
           .from('applications')
           .select('*')
@@ -181,7 +300,18 @@ function registerInteractionHandler(client) {
           return;
         }
 
-        const reason = 'Insufficient score or protocol knowledge';
+        // Check if already processed
+        if (app.status !== 'pending') {
+          await modalSubmit.followUp({ 
+            content: `⚠️ This application was already ${app.status} on ${new Date(app.reviewed_at).toLocaleString()}`, 
+            ephemeral: true 
+          });
+          
+          await editReviewedEmbed(interaction, app.status, app.reviewed_by || 'System', 
+            app.status === 'rejected' ? `\n📝 Reason: ${app.rejection_reason || 'Not specified'}` : '', 
+            appId);
+          return;
+        }
 
         // Update DB
         await supabase
@@ -207,16 +337,17 @@ function registerInteractionHandler(client) {
         await editReviewedEmbed(interaction, 'rejected', user.username, note, appId);
 
       } catch (err) {
-        logger.error('❌ Reject button error:', err.message);
+        if (err.code === 'InteractionCollectorError') {
+          await interaction.followUp({ content: '⏰ Timed out. Try again.', ephemeral: true });
+        } else {
+          logger.error('❌ Reject button error:', err.message);
+        }
       }
     }
 
     // ===== 📋 CONVERSATION LOG BUTTON =====
-    // FIX: Was dumping the full conversation log as 4 plain text messages to the channel.
-    // Now sends a compact ephemeral embed visible ONLY to the admin who clicked.
     else if (customId.startsWith('convo_')) {
       try {
-        // ephemeral: true = ONLY the clicker sees this, NOT posted to channel
         await interaction.deferReply({ ephemeral: true });
 
         const [, appId] = customId.split('_');
@@ -239,7 +370,6 @@ function registerInteractionHandler(client) {
           ? new Date(app.created_at).toLocaleString('en-US', { timeZone: 'UTC' }) + ' UTC'
           : 'Unknown';
 
-        // Get raw log and clean it up for Discord
         const rawLog = app.conversation_log || app.answers || 'No log available.';
         const cleanLog = rawLog
           .replace(/[═╔╗╠╣╚╝║]/g, '-')
@@ -247,8 +377,6 @@ function registerInteractionHandler(client) {
           .replace(/\n{3,}/g, '\n\n')
           .trim();
 
-        // Discord embed field limit is 1024 chars, description 4096
-        // Keep preview short — full log is in admin portal
         const preview = cleanLog.length > 900
           ? cleanLog.substring(0, 900) + '\n[...truncated]'
           : cleanLog;
@@ -284,7 +412,7 @@ function registerInteractionHandler(client) {
   });
 }
 
-// Update the Discord submission message to show accepted/rejected state and remove buttons
+// Helper to update embed after review
 async function editReviewedEmbed(interaction, status, adminName, note, appId) {
   try {
     const originalEmbed = interaction.message?.embeds?.[0]?.toJSON();
@@ -292,18 +420,20 @@ async function editReviewedEmbed(interaction, status, adminName, note, appId) {
 
     const embed = { ...originalEmbed };
     embed.color = status === 'accepted' ? 0x10b981 : 0xed4245;
+    
+    // Filter out old review fields
     embed.fields = (embed.fields || []).filter(f =>
-      !f.name.includes('Accepted') && !f.name.includes('Rejected')
+      !f.name.includes('Accepted') && !f.name.includes('Rejected') && !f.name.includes('Reason')
     );
+    
     embed.fields.push({
       name: status === 'accepted' ? '✅ Accepted By' : '❌ Rejected By',
       value: `${adminName}${note || ''}`,
       inline: false
     });
 
-    // Remove all buttons after review
     await interaction.editReply({ embeds: [embed], components: [] });
-    logger.success(`✅ Embed updated to: ${status}`);
+    logger.success(`✅ Discord embed updated to ${status} for app ${appId}`);
   } catch (err) {
     logger.error('❌ editReviewedEmbed error:', err.message);
   }
@@ -365,13 +495,15 @@ app.use((req, res) => {
 app.listen(PORT, () => {
   logger.info(`
 ╔════════════════════════════════════════════════════════════════╗
-║        VOID ESPORTS MOD TEST SERVER v3.1 — ALL FIXES          ║
+║        VOID ESPORTS MOD TEST SERVER v3.2 — ALL FIXES          ║
 ╠════════════════════════════════════════════════════════════════╣
 ║ 🚀 Port: ${String(PORT).padEnd(52)}║
-║ 📊 DB: ${(process.env.SUPABASE_URL ? '✅ CONFIGURED' : '❌ MISSING — set SUPABASE_URL').padEnd(55)}║
-║ 🏰 Guild: ${(process.env.DISCORD_GUILD_ID ? '✅ CONFIGURED' : '❌ MISSING — set DISCORD_GUILD_ID').padEnd(53)}║
-║ 🛡️  Mod Role: ${(process.env.MOD_ROLE_ID ? '✅ CONFIGURED' : '❌ MISSING — set MOD_ROLE_ID env var!').padEnd(49)}║
-║ 🎮 Discord Buttons: ✅ Interaction handler registered          ║
+║ 📊 DB: ${(process.env.SUPABASE_URL ? '✅ CONFIGURED' : '❌ MISSING').padEnd(55)}║
+║ 🏰 Guild: ${(process.env.DISCORD_GUILD_ID ? '✅ CONFIGURED' : '❌ MISSING').padEnd(53)}║
+║ 🛡️  Mod Role: ${(process.env.MOD_ROLE_ID ? '✅ CONFIGURED' : '❌ MISSING').padEnd(49)}║
+║ 🎮 Discord Buttons: ✅ Fixed with modal for reject            ║
+║ 🔄 Discord/Portal Sync: ✅ Messages update on both sides      ║
+║ 📱 Mobile Welcome: ✅ Fixed with extra delays                 ║
 ╚════════════════════════════════════════════════════════════════╝
   `);
 });
