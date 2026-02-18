@@ -185,5 +185,46 @@ router.post("/bot/test-dm", async (req, res) => {
     res.status(500).json({ error: error.message });
   }
 });
+router.get("/roles", async (req, res) => {
+  try {
+    const bot = getBot();
+    if (!bot || !await ensureBotReady()) {
+      return res.json({ success: false, error: "Bot not ready" });
+    }
+    const guildId = process.env.DISCORD_GUILD_ID;
+    if (!guildId) return res.json({ success: false, error: "DISCORD_GUILD_ID not set" });
+
+    const guild = await bot.guilds.fetch(guildId);
+    const roles = guild.roles.cache
+      .filter(role => role.name !== '@everyone')
+      .map(role => ({
+        id: role.id,
+        name: role.name,
+        color: role.hexColor,
+        position: role.position,
+        mention: `<@&${role.id}>`,
+        managed: role.managed
+      }))
+      .sort((a, b) => b.position - a.position);
+
+    res.json({
+      success: true,
+      guildName: guild.name,
+      guildId: guild.id,
+      roles
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Test role assignment
+router.post("/test-assign", async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: "userId required" });
+  const { assignModRole } = require("../utils/discordHelpers");
+  const result = await assignModRole(userId, "Test User");
+  res.json(result);
+});
 
 module.exports = router;
