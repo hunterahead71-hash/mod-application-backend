@@ -2,7 +2,6 @@ const express = require("express");
 const { supabase } = require("../config/supabase");
 const { logger } = require("../utils/logger");
 const { getClient, ensureReady, getBot } = require("../config/discord");
-const { requireAdmin } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -26,6 +25,7 @@ router.post("/submit-test-results", async (req, res) => {
       return res.status(400).json({ success: false, error: "Missing user info" });
     }
 
+    // Save to database
     const { data, error } = await supabase
       .from("applications")
       .insert([{
@@ -51,9 +51,10 @@ router.post("/submit-test-results", async (req, res) => {
 
     const appId = data?.[0]?.id;
 
+    // ===== SEND TO DISCORD CHANNEL (WITH MESSAGE ID STORAGE) =====
     if (process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CHANNEL_ID) {
       try {
-        const client = getBot();
+        const client = getBot(); // Use getBot() instead of getClient()
         if (client && await ensureReady()) {
           const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
 
@@ -112,11 +113,13 @@ router.post("/submit-test-results", async (req, res) => {
             const message = await channel.send({ embeds: [embed], components: [row] });
             logger.success(`✅ Sent to Discord #${channel.name}`);
 
+            // Store message ID for future updates (critical for sync)
             if (appId) {
               await supabase
                 .from("applications")
                 .update({ discord_message_id: message.id })
                 .eq("id", appId);
+              logger.info(`📝 Stored Discord message ID: ${message.id} for app ${appId}`);
             }
           }
         }
@@ -159,14 +162,15 @@ router.post("/api/submit", async (req, res) => {
 
     if (error) {
       logger.error("Fallback DB error:", error);
-      return res.json({ success: true });
+      return res.json({ success: true }); // Still return success to frontend
     }
 
     const appId = data?.[0]?.id;
 
+    // Try to send to Discord if possible (without blocking)
     if (process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CHANNEL_ID && appId) {
       try {
-        const client = getBot();
+        const client = getBot(); // Use getBot() instead of getClient()
         if (client && await ensureReady()) {
           const channel = await client.channels.fetch(process.env.DISCORD_CHANNEL_ID);
           if (channel) {
@@ -197,6 +201,7 @@ router.post("/api/submit", async (req, res) => {
 
             const message = await channel.send({ embeds: [embed], components: [row] });
             
+            // Store message ID
             await supabase
               .from("applications")
               .update({ discord_message_id: message.id })
@@ -204,7 +209,7 @@ router.post("/api/submit", async (req, res) => {
           }
         }
       } catch (discordError) {
-        // Non-critical
+        // Non-critical, don't log loudly
       }
     }
 
@@ -214,124 +219,7 @@ router.post("/api/submit", async (req, res) => {
   }
 });
 
-// ==================== TEST QUESTIONS API ====================
-router.get("/api/test-questions", async (req, res) => {
-  try {
-    console.log("📥 Fetching test questions from database...");
-    
-    const { data, error } = await supabase
-      .from("test_questions")
-      .select("*")
-      .eq('enabled', true)
-      .order("id", { ascending: true });
-    
-    if (error) {
-      console.error("Database error:", error);
-      return res.status(500).json({ success: false, error: error.message });
-    }
-    
-    console.log(`✅ Found ${data?.length || 0} enabled questions`);
-    
-    res.json({ 
-      success: true, 
-      questions: data || [] 
-    });
-    
-  } catch (err) {
-    console.error("Get test questions error:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-router.post("/api/test-questions", requireAdmin, async (req, res) => {
-  try {
-    const { user_message, username, avatar_color, keywords, required_matches, explanation } = req.body;
-    
-    const { data, error } = await supabase
-      .from("test_questions")
-      .insert([{
-        user_message,
-        username: username || 'User',
-        avatar_color: avatar_color || '#5865f2',
-        keywords: keywords || [],
-        required_matches: required_matches || 2,
-        explanation,
-        enabled: true,
-        created_by: req.session.user?.username || 'Admin',
-        updated_at: new Date().toISOString()
-      }])
-      .select();
-    
-    if (error) {
-      logger.error("Error creating test question:", error);
-      return res.json({ success: true, message: "Question saved locally" });
-    }
-    
-    res.json({ success: true, question: data[0] });
-  } catch (err) {
-    logger.error("Create test question error:", err);
-    res.json({ success: true, message: "Question added" });
-  }
-});
-
-router.put("/api/test-questions/:id", requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const updates = req.body;
-    
-    updates.updated_at = new Date().toISOString();
-    
-    const { data, error } = await supabase
-      .from("test_questions")
-      .update(updates)
-      .eq("id", id)
-      .select();
-    
-    if (error) {
-      logger.error("Error updating test question:", error);
-      return res.json({ success: false, error: error.message });
-    }
-    
-    res.json({ success: true, question: data[0] });
-  } catch (err) {
-    logger.error("Update test question error:", err);
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
-
-router.delete("/api/test-questions/:id", requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { permanent } = req.query;
-    
-    if (permanent === 'true') {
-      const { error } = await supabase
-        .from("test_questions")
-        .delete()
-        .eq("id", id);
-      
-      if (error) {
-        return res.json({ success: false, error: error.message });
-      }
-    } else {
-      const { error } = await supabase
-        .from("test_questions")
-        .update({ enabled: false, updated_at: new Date().toISOString() })
-        .eq("id", id);
-      
-      if (error) {
-        return res.json({ success: false, error: error.message });
-      }
-    }
-    
-    res.json({ success: true });
-  } catch (err) {
-    logger.error("Delete test question error:", err);
-    res.json({ success: true });
-  }
-});
-
-// ==================== APPLICATION STATUS ENDPOINTS ====================
+// ===== GET APPLICATION STATUS =====
 router.get("/application/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -352,6 +240,7 @@ router.get("/application/:id", async (req, res) => {
   }
 });
 
+// ===== GET APPLICATION BY DISCORD ID =====
 router.get("/user/:discordId", async (req, res) => {
   try {
     const { discordId } = req.params;
