@@ -26,8 +26,8 @@ const client = new Client({
 let botReady = false;
 let loginAttempts = 0;
 
-// ==================== DISCORD.JS v15 FIX: Use 'clientReady' not 'ready' ====================
-client.on('clientReady', async () => {
+// ==================== DISCORD.JS READY EVENT ====================
+client.once('ready', async () => {
   botReady = true;
   loginAttempts = 0;
   
@@ -45,7 +45,11 @@ client.on('clientReady', async () => {
   });
 
   // Register slash commands
-  await registerSlashCommands();
+  try {
+    await registerSlashCommands();
+  } catch (error) {
+    logger.error("❌ Failed to register commands:", error);
+  }
 
   // Check guild and roles
   if (process.env.DISCORD_GUILD_ID) {
@@ -93,31 +97,46 @@ client.on('warn', (warning) => {
 // ==================== SLASH COMMAND HANDLERS ====================
 const slashCommands = require('../commands/slashCommands');
 
-// Register slash commands
+// Register slash commands using REST API
 async function registerSlashCommands() {
   try {
+    const { REST, Routes } = require('discord.js');
+    const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);
+
     const commands = [
-      slashCommands.testQuestionCommand.data,
-      slashCommands.certRoleCommand.data,
-      slashCommands.analyticsCommand.data,
-      slashCommands.bulkCommand.data,
-      slashCommands.simulateCommand.data,
-      slashCommands.questionStatsCommand.data,
-      slashCommands.quickActionsCommand.data
+      slashCommands.testQuestionCommand.data.toJSON(),
+      slashCommands.certRoleCommand.data.toJSON(),
+      slashCommands.analyticsCommand.data.toJSON(),
+      slashCommands.bulkCommand.data.toJSON(),
+      slashCommands.simulateCommand.data.toJSON(),
+      slashCommands.questionStatsCommand.data.toJSON(),
+      slashCommands.quickActionsCommand.data.toJSON()
     ];
 
-    if (process.env.DISCORD_GUILD_ID) {
-      // Register to specific guild (faster, for testing)
-      const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
-      await guild.commands.set(commands);
-      logger.success(`✅ Registered ${commands.length} slash commands to guild ${guild.name}`);
-    } else {
+    logger.info(`🚀 Registering ${commands.length} application (/) commands...`);
+
+    let data;
+    if (process.env.DISCORD_GUILD_ID && process.env.DISCORD_CLIENT_ID) {
+      // Register to specific guild (faster, instant)
+      data = await rest.put(
+        Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, process.env.DISCORD_GUILD_ID),
+        { body: commands }
+      );
+      logger.success(`✅ Successfully registered ${data.length} guild commands to ${process.env.DISCORD_GUILD_ID}`);
+    } else if (process.env.DISCORD_CLIENT_ID) {
       // Register globally (takes up to 1 hour to propagate)
-      await client.application.commands.set(commands);
-      logger.success(`✅ Registered ${commands.length} slash commands globally`);
+      data = await rest.put(
+        Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
+        { body: commands }
+      );
+      logger.success(`✅ Successfully registered ${data.length} global commands`);
+    } else {
+      logger.warn("⚠️ DISCORD_CLIENT_ID not set - cannot register commands");
     }
   } catch (error) {
     logger.error("❌ Error registering slash commands:", error);
+    logger.error("Error details:", error.message);
+    if (error.stack) logger.error("Stack:", error.stack);
   }
 }
 
@@ -126,6 +145,20 @@ client.on('interactionCreate', async (interaction) => {
   // Handle slash commands
   if (interaction.isChatInputCommand()) {
     logger.info(`🔧 Slash command: ${interaction.commandName} by ${interaction.user.tag}`);
+
+    // CRITICAL: Defer reply immediately to prevent timeout
+    try {
+      await interaction.deferReply({ ephemeral: true });
+    } catch (deferError) {
+      logger.error("Failed to defer reply:", deferError);
+      try {
+        await interaction.reply({ 
+          content: '❌ Error: Could not process command.', 
+          ephemeral: true 
+        });
+      } catch {}
+      return;
+    }
 
     try {
       const commandName = interaction.commandName;
@@ -144,22 +177,29 @@ client.on('interactionCreate', async (interaction) => {
         await slashCommands.questionStatsCommand.execute(interaction);
       } else if (commandName === 'cert-quick') {
         await slashCommands.quickActionsCommand.execute(interaction);
+      } else {
+        // Unknown command
+        await interaction.editReply({ 
+          content: `❌ Unknown command: ${commandName}\n\nAvailable commands:\n- /test-question\n- /cert-role\n- /cert-analytics\n- /cert-bulk\n- /cert-simulate\n- /cert-question-stats\n- /cert-quick` 
+        });
       }
     } catch (error) {
       logger.error("❌ Slash command error:", error);
+      logger.error("Stack:", error.stack);
       try {
-        if (interaction.deferred || interaction.replied) {
-          await interaction.editReply({ 
-            content: '❌ Error processing command. Check logs.', 
+        await interaction.editReply({ 
+          content: `❌ Error processing command: ${error.message}\n\nCheck server logs for details.`, 
+          ephemeral: true 
+        }).catch(() => {
+          // If edit fails, try followUp
+          interaction.followUp({ 
+            content: `❌ Error: ${error.message}`, 
             ephemeral: true 
           }).catch(() => {});
-        } else {
-          await interaction.reply({ 
-            content: '❌ Error processing command. Check logs.', 
-            ephemeral: true 
-          }).catch(() => {});
-        }
-      } catch {}
+        });
+      } catch (replyError) {
+        logger.error("Failed to send error reply:", replyError);
+      }
     }
     return;
   }
@@ -579,8 +619,12 @@ module.exports = {
     logger.info("🔄 Bot not ready, waiting...");
     for (let i = 0; i < 30; i++) {
       await new Promise(r => setTimeout(r, 1000));
-      if (botReady && client.isReady()) return true;
+      if (botReady && client.isReady()) {
+        logger.success("✅ Bot is now ready!");
+        return true;
+      }
     }
+    logger.warn("⚠️ Bot ready check timed out after 30 seconds");
     return false;
   },
   initialize

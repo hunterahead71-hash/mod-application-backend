@@ -103,14 +103,18 @@ const testQuestionCommand = {
             .setRequired(true))),
   
   async execute(interaction) {
-    if (!await isAdmin(interaction.member)) {
-      return interaction.reply({ 
-        content: '❌ You do not have permission to use this command.', 
-        ephemeral: true 
-      });
+    // Check if already deferred (should be deferred by main handler)
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ 
+        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+      });
+    }
 
     const subcommand = interaction.options.getSubcommand();
 
@@ -339,14 +343,18 @@ const certRoleCommand = {
         .setDescription('List all certification roles')),
   
   async execute(interaction) {
-    if (!await isAdmin(interaction.member)) {
-      return interaction.reply({ 
-        content: '❌ You do not have permission to use this command.', 
-        ephemeral: true 
-      });
+    // Check if already deferred (should be deferred by main handler)
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ 
+        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+      });
+    }
 
     const subcommand = interaction.options.getSubcommand();
 
@@ -505,14 +513,18 @@ const analyticsCommand = {
             .setRequired(false))),
   
   async execute(interaction) {
-    if (!await isAdmin(interaction.member)) {
-      return interaction.reply({ 
-        content: '❌ You do not have permission to use this command.', 
-        ephemeral: true 
-      });
+    // Check if already deferred (should be deferred by main handler)
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ 
+        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+      });
+    }
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -659,14 +671,18 @@ const bulkCommand = {
         .setDescription('Export questions as JSON')),
   
   async execute(interaction) {
-    if (!await isAdmin(interaction.member)) {
-      return interaction.reply({ 
-        content: '❌ You do not have permission to use this command.', 
-        ephemeral: true 
-      });
+    // Check if already deferred (should be deferred by main handler)
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ 
+        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+      });
+    }
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -761,14 +777,18 @@ const simulateCommand = {
         .setMaxValue(8)),
   
   async execute(interaction) {
-    if (!await isAdmin(interaction.member)) {
-      return interaction.reply({ 
-        content: '❌ You do not have permission to use this command.', 
-        ephemeral: true 
-      });
+    // Check if already deferred (should be deferred by main handler)
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ 
+        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+      });
+    }
 
     try {
       const user = interaction.options.getUser('user');
@@ -823,14 +843,18 @@ const questionStatsCommand = {
         .setRequired(false)),
   
   async execute(interaction) {
-    if (!await isAdmin(interaction.member)) {
-      return interaction.reply({ 
-        content: '❌ You do not have permission to use this command.', 
-        ephemeral: true 
-      });
+    // Check if already deferred (should be deferred by main handler)
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ 
+        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+      });
+    }
 
     try {
       const questionId = interaction.options.getInteger('id');
@@ -935,14 +959,18 @@ const quickActionsCommand = {
             .setRequired(false))),
   
   async execute(interaction) {
-    if (!await isAdmin(interaction.member)) {
-      return interaction.reply({ 
-        content: '❌ You do not have permission to use this command.', 
-        ephemeral: true 
-      });
+    // Check if already deferred (should be deferred by main handler)
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
     }
 
-    await interaction.deferReply({ ephemeral: true });
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ 
+        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+      });
+    }
     const subcommand = interaction.options.getSubcommand();
 
     try {
