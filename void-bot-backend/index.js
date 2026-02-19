@@ -447,6 +447,11 @@ app.get("/ping", (req, res) => {
   res.json({ success: true, message: "pong", time: new Date().toISOString() });
 });
 
+// Simple root status endpoint
+app.get("/", (req, res) => {
+  res.send("Void Esports Mod Backend is running ✅");
+});
+
 app.get("/set-test-intent", (req, res) => {
   if (req.session) {
     req.session.loginIntent = "test";

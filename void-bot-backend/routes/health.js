@@ -1,6 +1,6 @@
 const express = require("express");
+const axios = require("axios");
 const { supabase } = require("../config/supabase");
-const { bot } = require("../config/discord");
 const { logger } = require("../utils/logger");
 
 const router = express.Router();
