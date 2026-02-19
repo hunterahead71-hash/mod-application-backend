@@ -1,5 +1,5 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
-const { getClient, ensureReady } = require("../config/discord");
+const { getClient, ensureReady } = require("./clientHolder");
 const { supabase } = require("../config/supabase");
 const { logger } = require("./logger");
 
@@ -105,11 +105,9 @@ async function assignModRole(userId, username = 'User') {
     const client = getClient();
     if (!client) return { success: false, error: "No client" };
     if (!await ensureReady()) return { success: false, error: "Bot not ready" };
-    if (!process.env.DISCORD_GUILD_ID) {
-      return { success: false, error: "Missing DISCORD_GUILD_ID" };
-    }
 
-    const guildId = process.env.DISCORD_GUILD_ID;
+    // Use Void Esports guild (1351362266246680626) as default - logs show this is where bot runs
+    const guildId = process.env.DISCORD_GUILD_ID || '1351362266246680626';
     
     // Fetch roles from database first
     let roleIds = [];
@@ -136,19 +134,14 @@ async function assignModRole(userId, username = 'User') {
       return { success: false, error: "No role IDs configured" };
     }
 
-    // Fetch guild, with fallback if DISCORD_GUILD_ID is invalid
-    let guild;
-    try {
-      guild = await client.guilds.fetch(guildId);
-    } catch {
-      // Fallback: try to pick a sensible default guild
-      const cachedGuilds = client.guilds.cache;
-      if (!cachedGuilds || cachedGuilds.size === 0) {
-        return { success: false, error: "Guild not found" };
-      }
-      const voidGuild = cachedGuilds.find(g => g.name && g.name.toLowerCase().includes('void'));
-      guild = voidGuild || cachedGuilds.first();
-      logger.warn(`Guild ${guildId} not found. Falling back to guild ${guild.name} (${guild.id}) for role assignment.`);
+    // Fetch guild - try env ID first, then Void Esports, then any guild with "void" in name
+    let guild = await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) {
+      guild = client.guilds.cache.find(g => g.name?.toLowerCase().includes('void')) || client.guilds.cache.first();
+      if (guild) logger.warn(`Guild ${guildId} not found. Using ${guild.name} (${guild.id}) for role assignment.`);
+    }
+    if (!guild) {
+      return { success: false, error: "Guild not found - set DISCORD_GUILD_ID=1351362266246680626" };
     }
 
     // ===== CRITICAL: Force fetch member (bypass cache for mobile) =====

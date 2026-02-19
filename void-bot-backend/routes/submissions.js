@@ -53,8 +53,8 @@ router.post("/submit-test-results", async (req, res) => {
 
     // Log test submission to channel
     try {
-      const { logToChannel } = require("../config/discord");
-      await logToChannel(
+      const { logToChannel } = require("../utils/channelLogger");
+      if (typeof logToChannel === 'function') await logToChannel(
         '📝 Test Submission',
         `A new test submission was received`,
         0x5865f2,
@@ -65,7 +65,7 @@ router.post("/submit-test-results", async (req, res) => {
         ]
       );
     } catch (logError) {
-      logger.warn("Failed to log submission to channel:", logError);
+      logger.warn("Failed to log submission to channel:", logError?.message || logError);
     }
 
     // ===== SEND TO DISCORD CHANNEL (WITH MESSAGE ID STORAGE) =====

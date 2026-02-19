@@ -2,7 +2,17 @@ const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('disc
 const { supabase } = require('../config/supabase');
 const { logger } = require('../utils/logger');
 const { getDMTemplate } = require('../utils/discordHelpers');
-const { logToChannel } = require('../config/discord');
+const { logToChannel } = require('../utils/channelLogger');
+
+async function safeLog(...args) {
+  try {
+    const fn = typeof logToChannel === 'function' ? logToChannel : require('../utils/channelLogger').logToChannel;
+    return await fn(...args);
+  } catch (e) {
+    logger.warn('Channel log failed:', e.message);
+    return false;
+  }
+}
 
 // ==================== PERMISSION CHECK ====================
 async function isAdmin(member) {
@@ -173,7 +183,7 @@ const testQuestionCommand = {
         }
 
         // Log to channel
-        await logToChannel(
+        await safeLog(
           '📝 Question Added',
           `A new test question was added by ${interaction.user.tag}`,
           0x5865f2,
@@ -241,7 +251,7 @@ const testQuestionCommand = {
         if (explanation !== null) logFields.push({ name: '📖 Explanation', value: explanation.substring(0, 500), inline: false });
 
         // Log to channel
-        await logToChannel(
+        await safeLog(
           '✏️ Question Edited',
           `Question #${id} was edited by ${interaction.user.tag}`,
           0x5865f2,
@@ -267,7 +277,7 @@ const testQuestionCommand = {
         }
 
         // Log to channel
-        await logToChannel(
+        await safeLog(
           '🗑️ Question Deleted',
           `Question #${id} was deleted by ${interaction.user.tag}`,
           0xed4245,
@@ -340,7 +350,7 @@ const testQuestionCommand = {
         }
 
         // Log to channel
-        await logToChannel(
+        await safeLog(
           '✅ Question Enabled',
           `Question #${id} was enabled by ${interaction.user.tag}`,
           0x10b981,
@@ -368,7 +378,7 @@ const testQuestionCommand = {
         }
 
         // Log to channel
-        await logToChannel(
+        await safeLog(
           '❌ Question Disabled',
           `Question #${id} was disabled by ${interaction.user.tag}`,
           0xed4245,
@@ -494,7 +504,7 @@ const certRoleCommand = {
         }
 
         // Log to channel
-        await logToChannel(
+        await safeLog(
           '🎭 Role Added',
           `A new certification role was added by ${interaction.user.tag}`,
           0x5865f2,
@@ -549,7 +559,7 @@ const certRoleCommand = {
         }
 
         // Log to channel
-        await logToChannel(
+        await safeLog(
           '🎭 Role Removed',
           `A certification role was removed by ${interaction.user.tag}`,
           0xed4245,

@@ -1,50 +1,11 @@
-const { Client, GatewayIntentBits, ActivityType, Partials, EmbedBuilder } = require("discord.js");
+const { Client, GatewayIntentBits, ActivityType, Partials, EmbedBuilder, MessageFlags } = require("discord.js");
 const { logger } = require("../utils/logger");
 const { supabase } = require("./supabase");
+const { setClient: setChannelLoggerClient } = require("../utils/channelLogger");
+const { setDiscordRefs } = require("../utils/clientHolder");
 
 // Import helpers dynamically to avoid circular dependency
 let discordHelpers = null;
-
-// ==================== LOGGING TO SPECIFIED CHANNEL ====================
-const LOG_CHANNEL_ID = '1474079570641686655';
-const LOG_GUILD_ID = '1351362266246680626';
-
-async function logToChannel(title, description, color = 0x5865f2, fields = []) {
-  try {
-    if (!client || !client.isReady()) {
-      logger.warn("Bot not ready, skipping log to channel");
-      return false;
-    }
-
-    const guild = await client.guilds.fetch(LOG_GUILD_ID).catch(() => null);
-    if (!guild) {
-      logger.warn(`Guild ${LOG_GUILD_ID} not found for logging`);
-      return false;
-    }
-
-    const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
-    if (!channel) {
-      logger.warn(`Channel ${LOG_CHANNEL_ID} not found for logging`);
-      return false;
-    }
-
-    const embed = new EmbedBuilder()
-      .setTitle(title)
-      .setDescription(description)
-      .setColor(color)
-      .setTimestamp();
-
-    if (fields.length > 0) {
-      embed.addFields(fields);
-    }
-
-    await channel.send({ embeds: [embed] });
-    return true;
-  } catch (error) {
-    logger.error("Error logging to channel:", error);
-    return false;
-  }
-}
 
 const client = new Client({
   intents: [
@@ -71,6 +32,8 @@ let loginAttempts = 0;
 client.once('ready', async () => {
   botReady = true;
   loginAttempts = 0;
+  setChannelLoggerClient(client);
+  setDiscordRefs(client, ensureReady);
   
   logger.success(`✅ Discord bot ready as ${client.user.tag}`);
   logger.info(`📊 Servers: ${client.guilds.cache.size}`);
@@ -106,10 +69,12 @@ client.once('ready', async () => {
   
   await registerWithRetry();
 
-  // Check guild and roles
-  if (process.env.DISCORD_GUILD_ID) {
+  // Check guild and roles (use Void Esports guild as fallback: 1351362266246680626)
+  const guildIdToCheck = process.env.DISCORD_GUILD_ID || '1351362266246680626';
+  if (guildIdToCheck) {
     try {
-      const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
+      const guild = await client.guilds.fetch(guildIdToCheck).catch(() => null) || client.guilds.cache.find(g => g.name?.toLowerCase().includes('void')) || client.guilds.cache.first();
+      if (!guild) throw new Error('Unknown Guild');
       const botMember = await guild.members.fetch(client.user.id);
       
       logger.info("🔍 Bot Permissions Check:");
@@ -219,21 +184,17 @@ async function registerSlashCommands() {
 client.on('interactionCreate', async (interaction) => {
   // Handle slash commands
   if (interaction.isChatInputCommand()) {
-    logger.info(`🔧 Slash command: ${interaction.commandName} by ${interaction.user.tag}`);
-
-    // CRITICAL: Defer reply immediately to prevent timeout (non-ephemeral so everyone can see)
+    // CRITICAL: Defer FIRST (3 sec limit) - no awaits before this
     try {
-      await interaction.deferReply({ ephemeral: false });
+      await interaction.deferReply({ flags: [] });
     } catch (deferError) {
       logger.error("Failed to defer reply:", deferError);
       try {
-        await interaction.reply({ 
-          content: '❌ Error: Could not process command.', 
-          ephemeral: false 
-        });
+        await interaction.reply({ content: '❌ Error: Could not process command.', flags: [] });
       } catch {}
       return;
     }
+    logger.info(`🔧 Slash command: ${interaction.commandName} by ${interaction.user.tag}`);
 
     try {
       const commandName = interaction.commandName;
@@ -277,13 +238,9 @@ client.on('interactionCreate', async (interaction) => {
       try {
         await interaction.editReply({ 
           content: `❌ Error processing command: ${error.message}\n\nCheck server logs for details.`, 
-          ephemeral: true 
+          flags: []
         }).catch(() => {
-          // If edit fails, try followUp
-          interaction.followUp({ 
-            content: `❌ Error: ${error.message}`, 
-            ephemeral: true 
-          }).catch(() => {});
+          interaction.followUp({ content: `❌ Error: ${error.message}`, flags: [] }).catch(() => {});
         });
       } catch (replyError) {
         logger.error("Failed to send error reply:", replyError);
@@ -382,9 +339,10 @@ async function handleAccept(interaction, appId, discordId, helpers) {
     // ===== CRITICAL: ACTUALLY ASSIGN ROLES =====
     let roleResult = null;
     try {
-      // Force cache bypass for mobile users
-      const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
-      await guild.members.fetch({ force: true }); // Force refresh cache
+      // Force cache bypass for mobile users - use correct guild (Void Esports: 1351362266246680626)
+      const guildId = process.env.DISCORD_GUILD_ID || '1351362266246680626';
+      const guild = await client.guilds.fetch(guildId).catch(() => null) || client.guilds.cache.find(g => g.name?.toLowerCase().includes('void')) || client.guilds.cache.first();
+      if (guild) await guild.members.fetch({ force: true });
       
       roleResult = await helpers.assignModRole(discordId, app.discord_username);
       logger.success(`✅ Role assignment result:`, roleResult);
@@ -403,6 +361,7 @@ async function handleAccept(interaction, appId, discordId, helpers) {
         { name: '🎭 Roles Assigned', value: roleResult?.assigned?.length ? roleResult.assigned.map(r => r.name).join(', ') : 'None', inline: false }
       ]
     );
+    } catch (e) { logger.warn("Log to channel failed:", e.message); }
 
     // Send success message
     let reply = `✅ Application accepted!`;
@@ -500,8 +459,10 @@ async function handleReject(interaction, appId, discordId, helpers) {
     }
 
     // Log to channel
-    await logToChannel(
-      '❌ Application Rejected',
+    try {
+      const { logToChannel } = require("../utils/channelLogger");
+      await logToChannel(
+        '❌ Application Rejected',
       `Application #${appId} was rejected by ${interaction.user.tag}`,
       0xed4245,
       [
@@ -510,7 +471,8 @@ async function handleReject(interaction, appId, discordId, helpers) {
         { name: '📝 Reason', value: reason.substring(0, 1000), inline: false },
         { name: '📨 DM Sent', value: dmSent ? 'Yes' : 'No (DMs may be disabled)', inline: true }
       ]
-    );
+      );
+    } catch (e) { logger.warn("Log to channel failed:", e.message); }
 
     await modalSubmit.editReply(
       `✅ Application rejected.\nReason: ${reason}\n${dmSent ? '✅ DM sent' : '⚠️ DM failed (user may have DMs disabled)'}`
@@ -646,24 +608,25 @@ function getBot() {
   return client;
 }
 
+async function ensureReady() {
+  if (botReady && client.isReady()) return true;
+  logger.info("🔄 Bot not ready, waiting...");
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 1000));
+    if (botReady && client.isReady()) {
+      logger.success("✅ Bot is now ready!");
+      return true;
+    }
+  }
+  logger.warn("⚠️ Bot ready check timed out after 30 seconds");
+  return false;
+}
+
 module.exports = {
   client,
   getClient: () => client,
   getBot,
   botReady: () => botReady,
-  ensureReady: async () => {
-    if (botReady && client.isReady()) return true;
-    logger.info("🔄 Bot not ready, waiting...");
-    for (let i = 0; i < 30; i++) {
-      await new Promise(r => setTimeout(r, 1000));
-      if (botReady && client.isReady()) {
-        logger.success("✅ Bot is now ready!");
-        return true;
-      }
-    }
-    logger.warn("⚠️ Bot ready check timed out after 30 seconds");
-    return false;
-  },
-  initialize,
-  logToChannel
+  ensureReady,
+  initialize
 };
