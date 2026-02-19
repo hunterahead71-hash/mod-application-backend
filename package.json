@@ -1,0 +1,14 @@
+{
+  "name": "mod-application-backend-root",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Root wrapper to run void-bot-backend on hosts that start from repo root.",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "postinstall": "npm --prefix void-bot-backend ci",
+    "start": "node void-bot-backend/index.js"
+  }
+}
+
