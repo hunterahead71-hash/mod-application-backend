@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node index.js",
     "deploy-commands": "node deploy-commands.js",
+    "delete-old-commands": "node scripts/delete-old-commands.js",
+    "cleanup-and-deploy": "node scripts/cleanup-and-deploy.js",
     "test-commands": "node scripts/test-commands.js"
   },
   "dependencies": {

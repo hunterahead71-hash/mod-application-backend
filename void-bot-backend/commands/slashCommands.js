@@ -114,6 +114,7 @@ const testQuestionCommand = {
       });
     }
 
+    // This command has subcommands, get it
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -302,8 +303,9 @@ const testQuestionCommand = {
       }
     } catch (error) {
       logger.error(`test-question ${subcommand} error:`, error);
+      logger.error('Stack:', error.stack);
       await interaction.editReply({ 
-        content: `❌ Error: ${error.message}` 
+        content: `❌ Error executing command: ${error.message}\n\nIf this persists, check server logs.` 
       });
     }
   }
@@ -351,6 +353,7 @@ const certRoleCommand = {
       });
     }
 
+    // This command has subcommands, get it
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -470,8 +473,9 @@ const certRoleCommand = {
       }
     } catch (error) {
       logger.error(`cert-role ${subcommand} error:`, error);
+      logger.error('Stack:', error.stack);
       await interaction.editReply({ 
-        content: `❌ Error: ${error.message}` 
+        content: `❌ Error executing command: ${error.message}` 
       });
     }
   }
@@ -515,6 +519,7 @@ const analyticsCommand = {
       });
     }
 
+    // This command has subcommands, get it
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -631,8 +636,9 @@ const analyticsCommand = {
       }
     } catch (error) {
       logger.error(`analytics ${subcommand} error:`, error);
+      logger.error('Stack:', error.stack);
       await interaction.editReply({ 
-        content: `❌ Error: ${error.message}` 
+        content: `❌ Error executing command: ${error.message}` 
       });
     }
   }
@@ -672,6 +678,7 @@ const bulkCommand = {
       });
     }
 
+    // This command has subcommands, get it
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -742,8 +749,9 @@ const bulkCommand = {
       }
     } catch (error) {
       logger.error(`bulk ${subcommand} error:`, error);
+      logger.error('Stack:', error.stack);
       await interaction.editReply({ 
-        content: `❌ Error: ${error.message}` 
+        content: `❌ Error executing command: ${error.message}` 
       });
     }
   }
@@ -812,8 +820,9 @@ const simulateCommand = {
       });
     } catch (error) {
       logger.error('simulate error:', error);
+      logger.error('Stack:', error.stack);
       await interaction.editReply({ 
-        content: `❌ Error: ${error.message}` 
+        content: `❌ Error executing command: ${error.message}` 
       });
     }
   }
@@ -911,8 +920,9 @@ const questionStatsCommand = {
       }
     } catch (error) {
       logger.error('question-stats error:', error);
+      logger.error('Stack:', error.stack);
       await interaction.editReply({ 
-        content: `❌ Error: ${error.message}` 
+        content: `❌ Error executing command: ${error.message}` 
       });
     }
   }
@@ -952,6 +962,7 @@ const quickActionsCommand = {
       });
     }
 
+    // This command has subcommands, get it
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -1045,8 +1056,9 @@ const quickActionsCommand = {
       }
     } catch (error) {
       logger.error(`quick ${subcommand} error:`, error);
+      logger.error('Stack:', error.stack);
       await interaction.editReply({ 
-        content: `❌ Error: ${error.message}` 
+        content: `❌ Error executing command: ${error.message}` 
       });
     }
   }
@@ -1119,8 +1131,9 @@ const botStatusCommand = {
       await interaction.editReply({ embeds: [embed] });
     } catch (error) {
       logger.error('status error:', error);
+      logger.error('Stack:', error.stack);
       await interaction.editReply({ 
-        content: `❌ Error: ${error.message}` 
+        content: `❌ Error executing command: ${error.message}` 
       });
     }
   }

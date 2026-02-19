@@ -199,12 +199,24 @@ client.on('interactionCreate', async (interaction) => {
       };
 
       const commandHandler = commandMap[commandName];
-      if (commandHandler) {
-        await commandHandler.execute(interaction);
-      } else {
-        // Unknown command - show help
-        await slashCommands.helpCommand.execute(interaction);
+      
+      if (!commandHandler) {
+        logger.warn(`⚠️ Unknown command: ${commandName} - This might be an old command that needs to be deleted`);
+        logger.info(`Available commands: ${Object.keys(commandMap).join(', ')}`);
+        return interaction.editReply({ 
+          content: `❌ Unknown command: \`/${commandName}\`\n\nThis command doesn't exist. Use \`/cert-help\` to see all available commands.\n\n**Note:** Old commands like \`/addquestion\`, \`/deletequestion\` etc. have been replaced. Please use the new commands shown in \`/cert-help\`.` 
+        });
       }
+      
+      if (!commandHandler.execute) {
+        logger.error(`❌ Command ${commandName} has no execute function`);
+        return interaction.editReply({ 
+          content: `❌ Error: Command handler not found for \`/${commandName}\`` 
+        });
+      }
+      
+      logger.info(`📋 Executing command: ${commandName}`);
+      await commandHandler.execute(interaction);
     } catch (error) {
       logger.error("❌ Slash command error:", error);
       logger.error("Stack:", error.stack);
