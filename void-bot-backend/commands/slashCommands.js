@@ -1,6 +1,7 @@
 const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
 const { supabase } = require('../config/supabase');
 const { logger } = require('../utils/logger');
+const { getDMTemplate } = require('../utils/discordHelpers');
 
 // ==================== PERMISSION CHECK ====================
 async function isAdmin(member) {
@@ -126,17 +127,6 @@ const testQuestionCommand = {
         const explanation = interaction.options.getString('explanation') || '';
 
         const keywords = keywordsStr.split(',').map(k => k.trim()).filter(k => k);
-
-        const { data: maxOrderData } = await supabase
-          .from('test_questions')
-          .select('order')
-          .order('order', { ascending: false })
-          .limit(1);
-
-        const nextOrder = maxOrderData && maxOrderData.length > 0 
-          ? (maxOrderData[0].order || 0) + 1 
-          : 0;
-
         const { data, error } = await supabase
           .from('test_questions')
           .insert([{
@@ -146,7 +136,6 @@ const testQuestionCommand = {
             keywords: keywords,
             required_matches: requiredMatches,
             explanation: explanation,
-            order: nextOrder,
             enabled: true
           }])
           .select();
@@ -210,7 +199,7 @@ const testQuestionCommand = {
         const { data, error } = await supabase
           .from('test_questions')
           .select('*')
-          .order('order', { ascending: true });
+          .order('id', { ascending: true });
 
         if (error) {
           return interaction.editReply({ 
@@ -235,7 +224,7 @@ const testQuestionCommand = {
         let description = '';
         data.slice(0, 10).forEach(q => {
           const status = q.enabled ? '✅' : '❌';
-          description += `${status} **#${q.id}** (Order: ${q.order || 0}) - ${q.user_message.substring(0, 60)}${q.user_message.length > 60 ? '...' : ''}\n`;
+          description += `${status} **#${q.id}** - ${q.user_message.substring(0, 60)}${q.user_message.length > 60 ? '...' : ''}\n`;
         });
 
         if (data.length > 10) {
@@ -247,22 +236,8 @@ const testQuestionCommand = {
         await interaction.editReply({ embeds: [embed] });
 
       } else if (subcommand === 'reorder') {
-        const id = interaction.options.getInteger('id');
-        const position = interaction.options.getInteger('position');
-
-        const { error } = await supabase
-          .from('test_questions')
-          .update({ order: position })
-          .eq('id', id);
-
-        if (error) {
-          return interaction.editReply({ 
-            content: `❌ Error reordering question: ${error.message}` 
-          });
-        }
-
         await interaction.editReply({ 
-          content: `✅ Question ${id} moved to position ${position}!` 
+          content: '⚠️ Manual question ordering is not enabled on this database. Questions are currently ordered by ID.' 
         });
 
       } else if (subcommand === 'enable') {
@@ -373,11 +348,23 @@ const certRoleCommand = {
           });
         }
 
-        const { data: existing } = await supabase
-          .from('mod_roles')
-          .select('*')
-          .eq('role_id', roleId)
-          .single();
+        let existing = null;
+        try {
+          const { data } = await supabase
+            .from('mod_roles')
+            .select('*')
+            .eq('role_id', roleId)
+            .single();
+          existing = data;
+        } catch (dbError) {
+          // If mod_roles table does not exist, fall back to env-based roles only
+          if (dbError?.message?.includes("mod_roles")) {
+            return interaction.editReply({
+              content: '⚠️ The `mod_roles` table is not set up in Supabase. This command currently relies on `MOD_ROLE_ID` in your environment.'
+            });
+          }
+          throw dbError;
+        }
 
         if (existing) {
           return interaction.editReply({ 
@@ -413,11 +400,22 @@ const certRoleCommand = {
           roleId = roleInput.slice(3, -1);
         }
 
-        const { data, error } = await supabase
-          .from('mod_roles')
-          .delete()
-          .eq('role_id', roleId)
-          .select();
+        let data = null;
+        try {
+          const result = await supabase
+            .from('mod_roles')
+            .delete()
+            .eq('role_id', roleId)
+            .select();
+          data = result.data;
+        } catch (dbError) {
+          if (dbError?.message?.includes("mod_roles")) {
+            return interaction.editReply({
+              content: '⚠️ The `mod_roles` table is not set up in Supabase, so there is nothing to remove. Roles are currently managed via `MOD_ROLE_ID`.'
+            });
+          }
+          throw dbError;
+        }
 
         if (error) {
           return interaction.editReply({ 
@@ -436,40 +434,65 @@ const certRoleCommand = {
         });
 
       } else if (subcommand === 'list') {
-        const { data, error } = await supabase
-          .from('mod_roles')
-          .select('*')
-          .order('id', { ascending: true });
+        try {
+          const { data, error } = await supabase
+            .from('mod_roles')
+            .select('*')
+            .order('id', { ascending: true });
 
-        if (error) {
-          return interaction.editReply({ 
-            content: `❌ Error fetching roles: ${error.message}` 
-          });
-        }
+          if (error) {
+            if (error.message?.includes("mod_roles")) {
+              // Graceful fallback: show roles from env
+              if (!process.env.MOD_ROLE_ID) {
+                return interaction.editReply({
+                  content: '📋 No roles configured in Supabase or `MOD_ROLE_ID`. Use `/cert-role add` or set `MOD_ROLE_ID` in your environment.'
+                });
+              }
 
-        if (!data || data.length === 0) {
-          return interaction.editReply({ 
-            content: '📋 No roles configured. Use `/cert-role add` to add roles.' 
-          });
-        }
+              const envRoles = process.env.MOD_ROLE_ID.split(',').map(r => r.trim()).filter(Boolean);
+              const envDesc = envRoles.map(id => `<@&${id}>`).join('\n');
 
-        const embed = new EmbedBuilder()
-          .setTitle('📋 Certification Roles')
-          .setDescription(`Total: ${data.length} role(s)`)
-          .setColor(0x5865f2);
+              const embed = new EmbedBuilder()
+                .setTitle('📋 Certification Roles (Environment)')
+                .setDescription(envDesc || 'No roles configured in `MOD_ROLE_ID`.')
+                .setColor(0x5865f2);
 
-        let description = '';
-        for (const role of data) {
-          const roleMention = `<@&${role.role_id}>`;
-          description += `**${role.role_name}** ${roleMention}\n`;
-          if (role.description) {
-            description += `  └ ${role.description}\n`;
+              return interaction.editReply({ embeds: [embed] });
+            }
+
+            return interaction.editReply({ 
+              content: `❌ Error fetching roles: ${error.message}` 
+            });
           }
+
+          if (!data || data.length === 0) {
+            return interaction.editReply({ 
+              content: '📋 No roles configured. Use `/cert-role add` to add roles.' 
+            });
+          }
+
+          const embed = new EmbedBuilder()
+            .setTitle('📋 Certification Roles')
+            .setDescription(`Total: ${data.length} role(s)`)
+            .setColor(0x5865f2);
+
+          let description = '';
+          for (const role of data) {
+            const roleMention = `<@&${role.role_id}>`;
+            description += `**${role.role_name}** ${roleMention}\n`;
+            if (role.description) {
+              description += `  └ ${role.description}\n`;
+            }
+          }
+
+          embed.setDescription(description);
+
+          await interaction.editReply({ embeds: [embed] });
+        } catch (dbError) {
+          return interaction.editReply({
+            content: `❌ Error fetching roles: ${dbError.message}`
+          });
         }
-
-        embed.setDescription(description);
-
-        await interaction.editReply({ embeds: [embed] });
       }
     } catch (error) {
       logger.error(`cert-role ${subcommand} error:`, error);
@@ -708,31 +731,15 @@ const bulkCommand = {
         });
 
       } else if (subcommand === 'reorder-auto') {
-        const { data: questions, error } = await supabase
-          .from('test_questions')
-          .select('id')
-          .order('id', { ascending: true });
-
-        if (error) throw error;
-
-        let updated = 0;
-        for (let i = 0; i < questions.length; i++) {
-          await supabase
-            .from('test_questions')
-            .update({ order: i })
-            .eq('id', questions[i].id);
-          updated++;
-        }
-
         await interaction.editReply({ 
-          content: `✅ Auto-reordered ${updated} question(s)!` 
+          content: '⚠️ Auto-reorder is disabled because the `order` column is not present. Questions are ordered by ID.' 
         });
 
       } else if (subcommand === 'export') {
         const { data: questions, error } = await supabase
           .from('test_questions')
           .select('*')
-          .order('order', { ascending: true });
+          .order('id', { ascending: true });
 
         if (error) throw error;
 
@@ -899,7 +906,7 @@ const questionStatsCommand = {
       } else {
         const { data: questions, error } = await supabase
           .from('test_questions')
-          .select('id, enabled, order');
+          .select('id, enabled');
 
         if (error) throw error;
 
@@ -1200,6 +1207,162 @@ const helpCommand = {
   }
 };
 
+// ==================== DM TEMPLATE COMMAND ====================
+const dmTemplateCommand = {
+  data: new SlashCommandBuilder()
+    .setName('cert-dm')
+    .setDescription('Configure accept/reject DM templates')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('accept-view')
+        .setDescription('View the current accept DM template'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('accept-edit')
+        .setDescription('Edit the accept DM template')
+        .addStringOption(option =>
+          option.setName('title')
+            .setDescription('Embed title (optional)')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('body')
+            .setDescription('DM body; supports {username} and {roles}')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('footer')
+            .setDescription('Embed footer (optional)')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('color')
+            .setDescription('Hex color (e.g. #3ba55c)')
+            .setRequired(false)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('reject-view')
+        .setDescription('View the current reject DM template'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('reject-edit')
+        .setDescription('Edit the reject DM template')
+        .addStringOption(option =>
+          option.setName('title')
+            .setDescription('Embed title (optional)')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('body')
+            .setDescription('DM body; supports {username} and {reason}')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('footer')
+            .setDescription('Embed footer (optional)')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('color')
+            .setDescription('Hex color (e.g. #ed4245)')
+            .setRequired(false))),
+
+  async execute(interaction) {
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
+    }
+
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({
+        content: '❌ You do not have permission to use this command.'
+      });
+    }
+
+    const subcommand = interaction.options.getSubcommand();
+
+    try {
+      if (subcommand === 'accept-view' || subcommand === 'reject-view') {
+        const type = subcommand.startsWith('accept') ? 'accept' : 'reject';
+        const defaults = type === 'accept'
+          ? {
+              title: '🎉 Welcome to the Void Esports Mod Team!',
+              body: 'Congratulations {username}! Your application was **approved**.\n\nYou have been granted: **{roles}**.',
+              footer: 'Welcome to the Mod Team!',
+              color: 0x3ba55c
+            }
+          : {
+              title: '❌ Application Status Update',
+              body: 'Hello {username},\n\nAfter review, your moderator application has **not been approved**.\n\n**Reason:** {reason}\n\nYou may reapply in 30 days.',
+              footer: 'Better luck next time!',
+              color: 0xed4245
+            };
+
+        const template = await getDMTemplate(type, defaults);
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📨 ${type === 'accept' ? 'Accept' : 'Reject'} DM Template`)
+          .setColor(template.color)
+          .addFields(
+            { name: 'Title', value: template.title, inline: false },
+            { name: 'Body', value: '```txt\n' + template.body + '\n```', inline: false },
+            { name: 'Footer', value: template.footer || 'None', inline: false }
+          )
+          .setFooter({ text: 'Placeholders: {username}, {roles}, {reason}' });
+
+        return interaction.editReply({ embeds: [embed] });
+      }
+
+      const type = subcommand.startsWith('accept') ? 'accept' : 'reject';
+      const title = interaction.options.getString('title');
+      const body = interaction.options.getString('body');
+      const footer = interaction.options.getString('footer');
+      const colorHex = interaction.options.getString('color');
+
+      const fieldsToUpdate = {};
+      if (title) fieldsToUpdate.title = title;
+      if (body) fieldsToUpdate.body = body;
+      if (footer) fieldsToUpdate.footer = footer;
+      if (colorHex) fieldsToUpdate.color_hex = colorHex;
+
+      if (Object.keys(fieldsToUpdate).length === 0) {
+        return interaction.editReply({
+          content: '⚠️ Nothing to update. Provide at least one of `title`, `body`, `footer`, or `color`.'
+        });
+      }
+
+      try {
+        const { error } = await supabase
+          .from('dm_templates')
+          .upsert({
+            type,
+            ...fieldsToUpdate,
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'type' });
+
+        if (error) {
+          if (error.message?.includes('dm_templates')) {
+            return interaction.editReply({
+              content: '⚠️ The `dm_templates` table is not set up in Supabase. Templates will continue using built-in defaults.'
+            });
+          }
+          return interaction.editReply({
+            content: `❌ Error saving template: ${error.message}`
+          });
+        }
+
+        return interaction.editReply({
+          content: `✅ ${type === 'accept' ? 'Accept' : 'Reject'} DM template updated successfully.`
+        });
+      } catch (dbError) {
+        return interaction.editReply({
+          content: `❌ Error saving template: ${dbError.message}`
+        });
+      }
+    } catch (error) {
+      logger.error('cert-dm error:', error);
+      logger.error('Stack:', error.stack);
+      await interaction.editReply({
+        content: `❌ Error executing command: ${error.message}`
+      });
+    }
+  }
+};
+
 module.exports = {
   testQuestionCommand,
   certRoleCommand,
@@ -1209,5 +1372,6 @@ module.exports = {
   questionStatsCommand,
   quickActionsCommand,
   botStatusCommand,
-  helpCommand
+  helpCommand,
+  dmTemplateCommand
 };

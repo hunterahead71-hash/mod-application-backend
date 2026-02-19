@@ -1,6 +1,39 @@
 const { EmbedBuilder, PermissionsBitField } = require("discord.js");
 const { getClient, ensureReady } = require("../config/discord");
+const { supabase } = require("../config/supabase");
 const { logger } = require("./logger");
+
+// ==================== DM TEMPLATE RESOLVER ====================
+async function getDMTemplate(type, defaults) {
+  try {
+    const { data, error } = await supabase
+      .from('dm_templates')
+      .select('*')
+      .eq('type', type)
+      .single();
+
+    if (error || !data) return defaults;
+
+    let color = defaults.color;
+    if (data.color_hex && typeof data.color_hex === 'string') {
+      const hex = data.color_hex.replace('#', '');
+      const parsed = parseInt(hex, 16);
+      if (!Number.isNaN(parsed)) {
+        color = parsed;
+      }
+    }
+
+    return {
+      title: data.title || defaults.title,
+      body: data.body || defaults.body,
+      footer: data.footer || defaults.footer,
+      color
+    };
+  } catch (e) {
+    logger.warn(`DM template lookup failed for type=${type}:`, e.message);
+    return defaults;
+  }
+}
 
 // ==================== FIXED: DM WITH EXPLICIT CHANNEL CREATION ====================
 async function sendDM(userId, title, description, color, footer = null) {
@@ -158,12 +191,24 @@ async function assignModRole(userId, username = 'User') {
     let dmSent = false;
     if (assigned.length > 0) {
       const roleNames = assigned.map(r => r.name).join(', ');
+      const defaults = {
+        title: '🎉 Welcome to the Void Esports Mod Team!',
+        body: `Congratulations ${username}! Your application was **approved**.\n\nYou've been granted: **${roleNames}**.\n\n**Next Steps:**\n1. Read #staff-rules-and-info\n2. Introduce yourself in #staff-introductions\n3. Join next mod training\n\nWelcome aboard!`,
+        footer: 'Welcome to the Mod Team!',
+        color: 0x3ba55c
+      };
+
+      const template = await getDMTemplate('accept', defaults);
+      const body = template.body
+        .replace(/\{username\}/g, username)
+        .replace(/\{roles\}/g, roleNames);
+
       dmSent = await sendDM(
         userId,
-        '🎉 Welcome to the Void Esports Mod Team!',
-        `Congratulations ${username}! Your application was **approved**.\n\nYou've been granted: **${roleNames}**.\n\n**Next Steps:**\n1. Read #staff-rules-and-info\n2. Introduce yourself in #staff-introductions\n3. Join next mod training\n\nWelcome aboard!`,
-        0x3ba55c,
-        'Welcome to the Mod Team!'
+        template.title,
+        body,
+        template.color,
+        template.footer
       );
     }
 
@@ -183,13 +228,25 @@ async function assignModRole(userId, username = 'User') {
 
 // ==================== REJECTION DM ====================
 async function sendRejectionDM(userId, username, reason) {
+  const defaults = {
+    title: '❌ Application Status Update',
+    body: `Hello ${username},\n\nAfter review, your moderator application has **not been approved**.\n\n**Reason:** ${reason}\n\nYou may reapply in 30 days.\n\nThank you for your interest.`,
+    footer: 'Better luck next time!',
+    color: 0xed4245
+  };
+
+  const template = await getDMTemplate('reject', defaults);
+  const body = template.body
+    .replace(/\{username\}/g, username)
+    .replace(/\{reason\}/g, reason || 'Not specified');
+
   return await sendDM(
     userId,
-    '❌ Application Status Update',
-    `Hello ${username},\n\nAfter review, your moderator application has **not been approved**.\n\n**Reason:** ${reason}\n\nYou may reapply in 30 days.\n\nThank you for your interest.`,
-    0xed4245,
-    'Better luck next time!'
+    template.title,
+    body,
+    template.color,
+    template.footer
   );
 }
 
-module.exports = { sendDM, assignModRole, sendRejectionDM };
+module.exports = { sendDM, assignModRole, sendRejectionDM, getDMTemplate };

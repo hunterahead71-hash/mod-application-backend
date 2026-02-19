@@ -126,7 +126,8 @@ async function registerSlashCommands() {
       slashCommands.questionStatsCommand.data.toJSON(),
       slashCommands.quickActionsCommand.data.toJSON(),
       slashCommands.botStatusCommand.data.toJSON(),
-      slashCommands.helpCommand.data.toJSON()
+      slashCommands.helpCommand.data.toJSON(),
+      slashCommands.dmTemplateCommand.data.toJSON()
     ];
 
     logger.info(`🚀 Registering ${commands.length} application (/) commands...`);
@@ -195,7 +196,8 @@ client.on('interactionCreate', async (interaction) => {
         'cert-question-stats': slashCommands.questionStatsCommand,
         'cert-quick': slashCommands.quickActionsCommand,
         'cert-status': slashCommands.botStatusCommand,
-        'cert-help': slashCommands.helpCommand
+        'cert-help': slashCommands.helpCommand,
+        'cert-dm': slashCommands.dmTemplateCommand
       };
 
       const commandHandler = commandMap[commandName];
@@ -451,58 +453,55 @@ async function handleConvo(interaction, appId) {
       return interaction.editReply('❌ Application not found.');
     }
 
-    // Get the raw log or create one from answers
-    let rawLog = app.conversation_log || app.answers || '';
-    
-    // If no log exists, try to parse from test_results
-    if (!rawLog && app.test_results) {
+    // Build a concise Q&A style log: only questions and user replies
+    let qaPairs = [];
+    if (app.test_results) {
       try {
-        const testResults = typeof app.test_results === 'string' 
-          ? JSON.parse(app.test_results) 
+        const parsed = typeof app.test_results === 'string'
+          ? JSON.parse(app.test_results)
           : app.test_results;
-        
-        if (testResults && testResults.questions) {
-          rawLog = formatQuestionsIntoLog(testResults.questions);
+        if (parsed && Array.isArray(parsed.questions)) {
+          qaPairs = parsed.questions.map((q, index) => ({
+            index: index + 1,
+            question: q.question || q.prompt || 'Unknown question',
+            answer: q.answer || 'No answer provided'
+          }));
         }
       } catch (e) {
-        logger.error('Error parsing test_results:', e);
+        logger.error('Error parsing test_results for convo log:', e);
       }
     }
 
-    // If still no log, create a minimal one
-    if (!rawLog || rawLog.length < 10) {
-      const score = app.score || `${app.correct_answers || 0}/${app.total_questions || 8}`;
-      rawLog = createMinimalLog(app.discord_username, app.discord_id, score);
+    // Fallback: try to use conversation_log if Q&A not available
+    if (qaPairs.length === 0 && app.conversation_log) {
+      qaPairs.push({
+        index: 1,
+        question: 'Conversation',
+        answer: app.conversation_log.substring(0, 900)
+      });
     }
 
-    // Clean up the log - remove any weird characters but preserve formatting
-    const cleanLog = rawLog
-      .replace(/\r\n/g, '\n')
-      .replace(/[^\x20-\x7E\u2500-\u257F\n]/g, '') // Allow box drawing characters
-      .trim();
-
-    // Create the formatted transcript exactly as requested
-    const transcript = formatTranscript(cleanLog, app);
-
-    // Split into chunks if needed (Discord limit is 2000 chars)
-    if (transcript.length <= 1900) {
-      // Send as a single message
-      await interaction.editReply({
-        content: `\`\`\`\n${transcript}\n\`\`\``,
-        ephemeral: true
-      });
-    } else {
-      // Send as file attachment
-      const buffer = Buffer.from(transcript, 'utf-8');
-      await interaction.editReply({
-        content: `📋 **Complete Test Transcript**`,
-        files: [{
-          attachment: buffer,
-          name: `transcript_${app.discord_username}_${appId}.txt`
-        }],
+    if (qaPairs.length === 0) {
+      return interaction.editReply({
+        content: '📋 No detailed conversation log is available for this application.',
         ephemeral: true
       });
     }
+
+    let content = '';
+    qaPairs.forEach(pair => {
+      content += `Q${pair.index}: ${pair.question}\n`;
+      content += `A${pair.index}: ${pair.answer}\n\n`;
+    });
+
+    if (content.length > 1900) {
+      content = content.substring(0, 1900) + '\n[...truncated]';
+    }
+
+    await interaction.editReply({
+      content: '```txt\n' + content.trim() + '\n```',
+      ephemeral: true
+    });
 
     logger.success(`✅ Conversation log sent for app ${appId}`);
 
@@ -512,90 +511,6 @@ async function handleConvo(interaction, appId) {
   }
 }
 
-// Helper function to format questions into log
-function formatQuestionsIntoLog(questions) {
-  if (!Array.isArray(questions)) return '';
-  
-  let log = '';
-  questions.forEach((q, index) => {
-    log += `┌──────────────────────────────────────────────────────────────────────────┐\n`;
-    log += `│ QUESTION ${index + 1} of ${questions.length}${q.correct ? ' ✓ PASS' : ' ✗ FAIL'}\n`;
-    log += `├──────────────────────────────────────────────────────────────────────────┤\n`;
-    log += `│ USER: ${q.question || 'Unknown'}\n`;
-    log += `├──────────────────────────────────────────────────────────────────────────┤\n`;
-    log += `│ MOD RESPONSE:\n`;
-    log += `│ ${q.answer || 'No answer provided'}\n`;
-    log += `├──────────────────────────────────────────────────────────────────────────┤\n`;
-    log += `│ EVALUATION:\n`;
-    log += `│ Matches: ${q.matchCount || 0}/${q.requiredMatches || 2}\n`;
-    log += `│ Keywords: ${q.matchedKeywords ? q.matchedKeywords.join(', ') : 'None'}\n`;
-    log += `├──────────────────────────────────────────────────────────────────────────┤\n`;
-    log += `│ CORRECT RESPONSE:\n`;
-    log += `│ ${q.feedback || 'Follow protocol'}\n`;
-    log += `└──────────────────────────────────────────────────────────────────────────┘\n\n`;
-  });
-  return log;
-}
-
-// Helper function to create minimal log
-function createMinimalLog(username, userId, score) {
-  const date = new Date().toLocaleString();
-  const separator = '══════════════════════════════════════════════════════════════════════════════';
-  
-  let log = `${separator}\n`;
-  log += `VOID ESPORTS MODERATOR CERTIFICATION TEST - COMPLETE TRANSCRIPT\n`;
-  log += `${separator}\n`;
-  log += `User: ${username} (${userId})\n`;
-  log += `Date: ${date}\n`;
-  log += `Final Score: ${score}\n`;
-  log += `${separator}\n\n`;
-  log += `No detailed question log available.\n`;
-  log += `${separator}\n`;
-  
-  return log;
-}
-
-// Helper function to format the final transcript
-function formatTranscript(log, app) {
-  const separator = '══════════════════════════════════════════════════════════════════════════════';
-  const score = app.score || `${app.correct_answers || 0}/${app.total_questions || 8}`;
-  const passed = app.correct_answers >= 6 ? 'PASSED ✓' : 'FAILED ✗';
-  const date = app.created_at ? new Date(app.created_at).toLocaleString() : new Date().toLocaleString();
-  
-  // Extract just the Q&A part if it exists, otherwise use the whole log
-  let qaSection = log;
-  
-  // If the log already has the header, remove it to avoid duplication
-  if (log.includes(separator)) {
-    const parts = log.split(separator);
-    if (parts.length >= 3) {
-      // Take everything after the second separator
-      qaSection = parts.slice(2).join(separator).trim();
-    }
-  }
-  
-  // Build the complete transcript exactly as requested
-  let transcript = `${separator}\n`;
-  transcript += `VOID ESPORTS MODERATOR CERTIFICATION TEST - COMPLETE TRANSCRIPT\n`;
-  transcript += `${separator}\n`;
-  transcript += `User: ${app.discord_username} (${app.discord_id})\n`;
-  transcript += `Date: ${date}\n`;
-  transcript += `Final Score: ${score}\n`;
-  transcript += `Result: ${passed}\n`;
-  transcript += `${separator}\n\n`;
-  
-  // Add the Q&A section
-  transcript += qaSection;
-  
-  // Ensure it ends with the separator
-  if (!transcript.endsWith(separator)) {
-    transcript += `\n${separator}\n`;
-    transcript += `END OF TRANSCRIPT - ${score} CORRECT\n`;
-    transcript += `${separator}`;
-  }
-  
-  return transcript;
-}
 
 // ==================== LOGIN ====================
 async function login() {

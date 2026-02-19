@@ -157,6 +157,26 @@ async function ensureTables() {
       `);
       if (error) logger.error("Error creating mod_roles:", error.message);
     }
+
+    // Create dm_templates table (optional, for configurable DMs)
+    try {
+      const { error: dmRpcError } = await supabase.rpc('create_dm_templates_table', {});
+      if (dmRpcError) {
+        const { error: dmError } = await supabase.query(`
+          CREATE TABLE IF NOT EXISTS dm_templates (
+            type TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            body TEXT NOT NULL,
+            footer TEXT,
+            color_hex TEXT DEFAULT '#3ba55c',
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+          );
+        `);
+        if (dmError) logger.error("Error creating dm_templates:", dmError.message);
+      }
+    } catch (dmCatchError) {
+      logger.warn("dm_templates table creation skipped:", dmCatchError.message);
+    }
   } catch (err) {
     logger.error("Error ensuring tables:", err.message);
   }
