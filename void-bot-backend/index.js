@@ -3,15 +3,22 @@ const session = require("express-session");
 const MemoryStore = require('memorystore')(session);
 const path = require('path');
 
-// Config
-const { supabase } = require("./config/supabase");
-const { initialize: initBot, getClient, ensureReady } = require("./config/discord");
-
-// Logger
+// Logger first
 const { logger } = require("./utils/logger");
 
-// Discord helpers
-const { assignModRole, sendRejectionDM } = require("./utils/discordHelpers");
+// Config - wrap in try/catch so server starts even if Discord fails
+let discordModule = null;
+let supabase = null;
+try {
+  supabase = require("./config/supabase").supabase;
+  discordModule = require("./config/discord");
+} catch (e) {
+  logger.error("Failed to load config (Discord/bot may be disabled):", e.message);
+}
+
+const getClient = () => discordModule?.getClient?.() ?? null;
+const ensureReady = () => discordModule?.ensureReady?.() ?? Promise.resolve(false);
+const initBot = () => { if (discordModule?.initialize) discordModule.initialize(); };
 
 // Routes
 const authRoutes = require("./routes/auth");
@@ -243,7 +250,8 @@ app.use((req, res) => {
 });
 
 // ==================== START ====================
-app.listen(PORT, () => {
+// Bind to 0.0.0.0 so Render detects the service
+app.listen(PORT, '0.0.0.0', () => {
   logger.info(`
 ╔════════════════════════════════════════════════════════════════╗
 ║        VOID ESPORTS MOD TEST SERVER v3.2 — ALL FIXES          ║

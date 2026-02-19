@@ -1,0 +1,7 @@
+services:
+  - type: web
+    name: mod-application-backend
+    env: node
+    buildCommand: npm install
+    startCommand: node void-bot-backend/index.js
+    healthCheckPath: /
