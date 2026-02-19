@@ -291,7 +291,7 @@ router.get("/api/test-questions/active", async (req, res) => {
     const { data, error } = await supabase
       .from("test_questions")
       .select("*")
-      .eq("enabled", true)  // Only enabled questions
+      .eq("enabled", true)
       .order("order", { ascending: true })
       .order("id", { ascending: true });
     
