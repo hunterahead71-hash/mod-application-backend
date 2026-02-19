@@ -51,6 +51,23 @@ router.post("/submit-test-results", async (req, res) => {
 
     const appId = data?.[0]?.id;
 
+    // Log test submission to channel
+    try {
+      const { logToChannel } = require("../config/discord");
+      await logToChannel(
+        '📝 Test Submission',
+        `A new test submission was received`,
+        0x5865f2,
+        [
+          { name: '👤 User', value: discordUsername, inline: true },
+          { name: '📊 Score', value: score || `${correctAnswers}/${totalQuestions}`, inline: true },
+          { name: '🆔 Application ID', value: String(appId || 'pending'), inline: true }
+        ]
+      );
+    } catch (logError) {
+      logger.warn("Failed to log submission to channel:", logError);
+    }
+
     // ===== SEND TO DISCORD CHANNEL (WITH MESSAGE ID STORAGE) =====
     if (process.env.DISCORD_BOT_TOKEN && process.env.DISCORD_CHANNEL_ID) {
       try {
@@ -270,10 +287,11 @@ router.get("/user/:discordId", async (req, res) => {
 router.get("/api/test-questions/active", async (req, res) => {
   try {
     const { supabase } = require("../config/supabase");
+    // CRITICAL: Only fetch questions where enabled = true
     const { data, error } = await supabase
       .from("test_questions")
       .select("*")
-      .eq("enabled", true)
+      .eq("enabled", true)  // Only enabled questions
       .order("order", { ascending: true })
       .order("id", { ascending: true });
     
@@ -283,7 +301,12 @@ router.get("/api/test-questions/active", async (req, res) => {
       return res.json({ success: true, questions: [] });
     }
     
-    res.json({ success: true, questions: data || [] });
+    // Double-check: filter out any questions that might have enabled = false
+    const enabledQuestions = (data || []).filter(q => q.enabled === true);
+    
+    logger.info(`📋 Returning ${enabledQuestions.length} enabled question(s) out of ${data?.length || 0} total`);
+    
+    res.json({ success: true, questions: enabledQuestions });
   } catch (err) {
     logger.error("Get active test questions error:", err);
     res.json({ success: true, questions: [] });

@@ -2,20 +2,29 @@ const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('disc
 const { supabase } = require('../config/supabase');
 const { logger } = require('../utils/logger');
 const { getDMTemplate } = require('../utils/discordHelpers');
+const { logToChannel } = require('../config/discord');
 
 // ==================== PERMISSION CHECK ====================
 async function isAdmin(member) {
   if (!member) return false;
   
-  // Check if user has Administrator permission
+  // Check for specific admin role (1474083665293217914)
+  const ADMIN_ROLE_ID = '1474083665293217914';
+  if (member.roles.cache.has(ADMIN_ROLE_ID)) {
+    return true;
+  }
+  
+  // Also check if user has Administrator permission (fallback)
   if (member.permissions.has(PermissionFlagsBits.Administrator)) {
     return true;
   }
   
-  // Check for admin role IDs from env (comma-separated)
+  // Check for admin role IDs from env (comma-separated) as additional fallback
   if (process.env.ADMIN_ROLE_IDS) {
     const adminRoleIds = process.env.ADMIN_ROLE_IDS.split(',').map(id => id.trim());
-    return adminRoleIds.some(roleId => member.roles.cache.has(roleId));
+    if (adminRoleIds.some(roleId => member.roles.cache.has(roleId))) {
+      return true;
+    }
   }
   
   return false;
@@ -61,7 +70,23 @@ const testQuestionCommand = {
         .addStringOption(option =>
           option.setName('text')
             .setDescription('New question text')
-            .setRequired(true)))
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('username')
+            .setDescription('Username to display')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('keywords')
+            .setDescription('Comma-separated keywords (e.g., age,roster,requirement)')
+            .setRequired(false))
+        .addIntegerOption(option =>
+          option.setName('required_matches')
+            .setDescription('Required keyword matches')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('explanation')
+            .setDescription('Explanation/feedback for this question')
+            .setRequired(false)))
     .addSubcommand(subcommand =>
       subcommand
         .setName('delete')
@@ -106,12 +131,12 @@ const testQuestionCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     if (!await isAdmin(interaction.member)) {
       return interaction.editReply({ 
-        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+        content: '❌ You are not an admin. Contact support or nick for help.' 
       });
     }
 
@@ -147,6 +172,20 @@ const testQuestionCommand = {
           });
         }
 
+        // Log to channel
+        await logToChannel(
+          '📝 Question Added',
+          `A new test question was added by ${interaction.user.tag}`,
+          0x5865f2,
+          [
+            { name: '🆔 Question ID', value: String(data[0].id), inline: true },
+            { name: '👤 Username', value: username, inline: true },
+            { name: '📝 Question Text', value: text.substring(0, 500), inline: false },
+            { name: '🔑 Keywords', value: keywords.length > 0 ? keywords.join(', ') : 'None', inline: false },
+            { name: '🎯 Required Matches', value: String(requiredMatches), inline: true }
+          ]
+        );
+
         await interaction.editReply({ 
           content: `✅ Question added successfully!\n**ID:** ${data[0].id}\n**Text:** ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}` 
         });
@@ -154,10 +193,30 @@ const testQuestionCommand = {
       } else if (subcommand === 'edit') {
         const id = interaction.options.getInteger('id');
         const newText = interaction.options.getString('text');
+        const username = interaction.options.getString('username');
+        const keywordsStr = interaction.options.getString('keywords');
+        const requiredMatches = interaction.options.getInteger('required_matches');
+        const explanation = interaction.options.getString('explanation');
+
+        // Build update object with only provided fields
+        const updateData = {};
+        if (newText !== null) updateData.user_message = newText;
+        if (username !== null) updateData.username = username;
+        if (keywordsStr !== null) {
+          updateData.keywords = keywordsStr.split(',').map(k => k.trim()).filter(k => k);
+        }
+        if (requiredMatches !== null) updateData.required_matches = requiredMatches;
+        if (explanation !== null) updateData.explanation = explanation;
+
+        if (Object.keys(updateData).length === 0) {
+          return interaction.editReply({ 
+            content: `❌ No fields provided to update. Please provide at least one field (text, username, keywords, required_matches, or explanation).` 
+          });
+        }
 
         const { data, error } = await supabase
           .from('test_questions')
-          .update({ user_message: newText })
+          .update(updateData)
           .eq('id', id)
           .select();
 
@@ -172,6 +231,22 @@ const testQuestionCommand = {
             content: `❌ Question with ID ${id} not found.` 
           });
         }
+
+        // Build log fields
+        const logFields = [{ name: '🆔 Question ID', value: String(id), inline: true }];
+        if (newText !== null) logFields.push({ name: '📝 New Text', value: newText.substring(0, 500), inline: false });
+        if (username !== null) logFields.push({ name: '👤 Username', value: username, inline: true });
+        if (keywordsStr !== null) logFields.push({ name: '🔑 Keywords', value: updateData.keywords.join(', ') || 'None', inline: false });
+        if (requiredMatches !== null) logFields.push({ name: '🎯 Required Matches', value: String(requiredMatches), inline: true });
+        if (explanation !== null) logFields.push({ name: '📖 Explanation', value: explanation.substring(0, 500), inline: false });
+
+        // Log to channel
+        await logToChannel(
+          '✏️ Question Edited',
+          `Question #${id} was edited by ${interaction.user.tag}`,
+          0x5865f2,
+          logFields
+        );
 
         await interaction.editReply({ 
           content: `✅ Question ${id} updated successfully!` 
@@ -190,6 +265,16 @@ const testQuestionCommand = {
             content: `❌ Error deleting question: ${error.message}` 
           });
         }
+
+        // Log to channel
+        await logToChannel(
+          '🗑️ Question Deleted',
+          `Question #${id} was deleted by ${interaction.user.tag}`,
+          0xed4245,
+          [
+            { name: '🆔 Question ID', value: String(id), inline: true }
+          ]
+        );
 
         await interaction.editReply({ 
           content: `✅ Question ${id} deleted successfully!` 
@@ -254,6 +339,16 @@ const testQuestionCommand = {
           });
         }
 
+        // Log to channel
+        await logToChannel(
+          '✅ Question Enabled',
+          `Question #${id} was enabled by ${interaction.user.tag}`,
+          0x10b981,
+          [
+            { name: '🆔 Question ID', value: String(id), inline: true }
+          ]
+        );
+
         await interaction.editReply({ 
           content: `✅ Question ${id} enabled!` 
         });
@@ -271,6 +366,16 @@ const testQuestionCommand = {
             content: `❌ Error disabling question: ${error.message}` 
           });
         }
+
+        // Log to channel
+        await logToChannel(
+          '❌ Question Disabled',
+          `Question #${id} was disabled by ${interaction.user.tag}`,
+          0xed4245,
+          [
+            { name: '🆔 Question ID', value: String(id), inline: true }
+          ]
+        );
 
         await interaction.editReply({ 
           content: `✅ Question ${id} disabled!` 
@@ -319,12 +424,12 @@ const certRoleCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     if (!await isAdmin(interaction.member)) {
       return interaction.editReply({ 
-        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+        content: '❌ You are not an admin. Contact support or nick for help.' 
       });
     }
 
@@ -388,6 +493,18 @@ const certRoleCommand = {
           });
         }
 
+        // Log to channel
+        await logToChannel(
+          '🎭 Role Added',
+          `A new certification role was added by ${interaction.user.tag}`,
+          0x5865f2,
+          [
+            { name: '🎭 Role', value: role.name, inline: true },
+            { name: '🆔 Role ID', value: roleId, inline: true },
+            { name: '📝 Description', value: description || 'None', inline: false }
+          ]
+        );
+
         await interaction.editReply({ 
           content: `✅ Role **${role.name}** added successfully!\n**ID:** ${roleId}` 
         });
@@ -401,6 +518,7 @@ const certRoleCommand = {
         }
 
         let data = null;
+        let error = null;
         try {
           const result = await supabase
             .from('mod_roles')
@@ -408,6 +526,7 @@ const certRoleCommand = {
             .eq('role_id', roleId)
             .select();
           data = result.data;
+          error = result.error;
         } catch (dbError) {
           if (dbError?.message?.includes("mod_roles")) {
             return interaction.editReply({
@@ -428,6 +547,17 @@ const certRoleCommand = {
             content: `❌ Role not found in configuration.` 
           });
         }
+
+        // Log to channel
+        await logToChannel(
+          '🎭 Role Removed',
+          `A certification role was removed by ${interaction.user.tag}`,
+          0xed4245,
+          [
+            { name: '🎭 Role', value: data[0].role_name, inline: true },
+            { name: '🆔 Role ID', value: roleId, inline: true }
+          ]
+        );
 
         await interaction.editReply({ 
           content: `✅ Role **${data[0].role_name}** removed successfully!` 
@@ -533,7 +663,7 @@ const analyticsCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     if (!await isAdmin(interaction.member)) {
@@ -692,7 +822,7 @@ const bulkCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     if (!await isAdmin(interaction.member)) {
@@ -783,7 +913,7 @@ const simulateCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     if (!await isAdmin(interaction.member)) {
@@ -848,7 +978,7 @@ const questionStatsCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     if (!await isAdmin(interaction.member)) {
@@ -960,7 +1090,7 @@ const quickActionsCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     if (!await isAdmin(interaction.member)) {
@@ -1084,7 +1214,7 @@ const botStatusCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     if (!await isAdmin(interaction.member)) {
@@ -1155,7 +1285,7 @@ const helpCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     // Help command is public - no admin check needed
@@ -1264,7 +1394,7 @@ const dmTemplateCommand = {
   async execute(interaction) {
     const alreadyDeferred = interaction.deferred || interaction.replied;
     if (!alreadyDeferred) {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     }
 
     if (!await isAdmin(interaction.member)) {

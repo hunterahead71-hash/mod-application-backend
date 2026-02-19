@@ -5,6 +5,47 @@ const { supabase } = require("./supabase");
 // Import helpers dynamically to avoid circular dependency
 let discordHelpers = null;
 
+// ==================== LOGGING TO SPECIFIED CHANNEL ====================
+const LOG_CHANNEL_ID = '1474079570641686655';
+const LOG_GUILD_ID = '1351362266246680626';
+
+async function logToChannel(title, description, color = 0x5865f2, fields = []) {
+  try {
+    if (!client || !client.isReady()) {
+      logger.warn("Bot not ready, skipping log to channel");
+      return false;
+    }
+
+    const guild = await client.guilds.fetch(LOG_GUILD_ID).catch(() => null);
+    if (!guild) {
+      logger.warn(`Guild ${LOG_GUILD_ID} not found for logging`);
+      return false;
+    }
+
+    const channel = await guild.channels.fetch(LOG_CHANNEL_ID).catch(() => null);
+    if (!channel) {
+      logger.warn(`Channel ${LOG_CHANNEL_ID} not found for logging`);
+      return false;
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(title)
+      .setDescription(description)
+      .setColor(color)
+      .setTimestamp();
+
+    if (fields.length > 0) {
+      embed.addFields(fields);
+    }
+
+    await channel.send({ embeds: [embed] });
+    return true;
+  } catch (error) {
+    logger.error("Error logging to channel:", error);
+    return false;
+  }
+}
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -180,15 +221,15 @@ client.on('interactionCreate', async (interaction) => {
   if (interaction.isChatInputCommand()) {
     logger.info(`🔧 Slash command: ${interaction.commandName} by ${interaction.user.tag}`);
 
-    // CRITICAL: Defer reply immediately to prevent timeout
+    // CRITICAL: Defer reply immediately to prevent timeout (non-ephemeral so everyone can see)
     try {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ ephemeral: false });
     } catch (deferError) {
       logger.error("Failed to defer reply:", deferError);
       try {
         await interaction.reply({ 
           content: '❌ Error: Could not process command.', 
-          ephemeral: true 
+          ephemeral: false 
         });
       } catch {}
       return;
@@ -257,11 +298,6 @@ client.on('interactionCreate', async (interaction) => {
   logger.info(`🔘 Button clicked: ${interaction.customId} by ${interaction.user.tag}`);
 
   try {
-    // IMMEDIATELY defer the interaction to prevent timeout
-    await interaction.deferUpdate().catch(err => {
-      logger.error(`Failed to defer interaction: ${err.message}`);
-    });
-
     // Lazy load helpers to avoid circular dependency
     if (!discordHelpers) {
       discordHelpers = require("../utils/discordHelpers");
@@ -270,19 +306,34 @@ client.on('interactionCreate', async (interaction) => {
     const [action, appId, discordId] = interaction.customId.split('_');
 
     if (action === 'accept') {
+      // Defer immediately for accept
+      await interaction.deferUpdate().catch(err => {
+        logger.error(`Failed to defer interaction: ${err.message}`);
+      });
       await handleAccept(interaction, appId, discordId, discordHelpers);
     } else if (action === 'reject') {
+      // Don't defer for reject - we need to show modal first
       await handleReject(interaction, appId, discordId, discordHelpers);
     } else if (action === 'convo') {
+      await interaction.deferUpdate().catch(err => {
+        logger.error(`Failed to defer interaction: ${err.message}`);
+      });
       await handleConvo(interaction, appId);
     }
   } catch (error) {
     logger.error("❌ Button handler error:", error);
     try {
-      await interaction.followUp({ 
-        content: '❌ Error processing button. Check logs.', 
-        ephemeral: true 
-      }).catch(() => {});
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ 
+          content: '❌ Error processing button. Check logs.', 
+          ephemeral: true 
+        }).catch(() => {});
+      } else {
+        await interaction.followUp({ 
+          content: '❌ Error processing button. Check logs.', 
+          ephemeral: true 
+        }).catch(() => {});
+      }
     } catch {}
   }
 });
@@ -341,6 +392,18 @@ async function handleAccept(interaction, appId, discordId, helpers) {
       logger.error("❌ Role assignment error:", roleError);
     }
 
+    // Log to channel
+    await logToChannel(
+      '✅ Application Accepted',
+      `Application #${appId} was accepted by ${interaction.user.tag}`,
+      0x10b981,
+      [
+        { name: '👤 User', value: app.discord_username, inline: true },
+        { name: '📊 Score', value: app.score || 'N/A', inline: true },
+        { name: '🎭 Roles Assigned', value: roleResult?.assigned?.length ? roleResult.assigned.map(r => r.name).join(', ') : 'None', inline: false }
+      ]
+    );
+
     // Send success message
     let reply = `✅ Application accepted!`;
     if (roleResult?.assigned?.length) {
@@ -377,14 +440,15 @@ async function handleReject(interaction, appId, discordId, helpers) {
 
     modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
     
-    // Show modal (we already deferred, so this is fine)
+    // Show modal FIRST before deferring
     await interaction.showModal(modal);
 
     const modalSubmit = await interaction.awaitModalSubmit({
-      filter: i => i.customId === `reject_modal_${appId}`,
+      filter: i => i.customId === `reject_modal_${appId}` && i.user.id === interaction.user.id,
       time: 60000
     });
 
+    // Defer the modal submission
     await modalSubmit.deferUpdate();
     const reason = modalSubmit.fields.getTextInputValue('reason');
 
@@ -434,6 +498,19 @@ async function handleReject(interaction, appId, discordId, helpers) {
     } catch (dmError) {
       logger.error("❌ DM error:", dmError);
     }
+
+    // Log to channel
+    await logToChannel(
+      '❌ Application Rejected',
+      `Application #${appId} was rejected by ${interaction.user.tag}`,
+      0xed4245,
+      [
+        { name: '👤 User', value: app.discord_username, inline: true },
+        { name: '📊 Score', value: app.score || 'N/A', inline: true },
+        { name: '📝 Reason', value: reason.substring(0, 1000), inline: false },
+        { name: '📨 DM Sent', value: dmSent ? 'Yes' : 'No (DMs may be disabled)', inline: true }
+      ]
+    );
 
     await modalSubmit.editReply(
       `✅ Application rejected.\nReason: ${reason}\n${dmSent ? '✅ DM sent' : '⚠️ DM failed (user may have DMs disabled)'}`
@@ -587,5 +664,6 @@ module.exports = {
     logger.warn("⚠️ Bot ready check timed out after 30 seconds");
     return false;
   },
-  initialize
+  initialize,
+  logToChannel
 };
