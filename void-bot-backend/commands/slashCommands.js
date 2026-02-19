@@ -465,17 +465,23 @@ const certRoleCommand = {
 
         let existing = null;
         try {
-          const { data } = await supabase
+          const { data, error: checkError } = await supabase
             .from('mod_roles')
             .select('*')
             .eq('role_id', roleId)
             .single();
+          
+          if (checkError && checkError.code === 'PGRST205') {
+            return interaction.editReply({
+              content: '❌ The `mod_roles` table does not exist in Supabase.\n\n**Please run this SQL in Supabase SQL Editor:**\n```sql\nCREATE TABLE IF NOT EXISTS public.mod_roles (\n  id BIGSERIAL PRIMARY KEY,\n  role_id TEXT NOT NULL UNIQUE,\n  role_name TEXT NOT NULL,\n  description TEXT,\n  created_at TIMESTAMPTZ DEFAULT NOW()\n);\n\nALTER TABLE public.mod_roles ENABLE ROW LEVEL SECURITY;\nCREATE POLICY "Allow all for mod_roles" ON public.mod_roles\n  FOR ALL USING (true) WITH CHECK (true);\n```\n\nAfter running the SQL, wait 10 seconds and try again.'
+            });
+          }
+          
           existing = data;
         } catch (dbError) {
-          // If mod_roles table does not exist, fall back to env-based roles only
-          if (dbError?.message?.includes("mod_roles")) {
+          if (dbError?.code === 'PGRST205' || dbError?.message?.includes('mod_roles') || dbError?.message?.includes('schema cache')) {
             return interaction.editReply({
-              content: '⚠️ The `mod_roles` table is not set up in Supabase. This command currently relies on `MOD_ROLE_ID` in your environment.'
+              content: '❌ The `mod_roles` table is not found. Please create it using the SQL in SUPABASE_SETUP.md, then wait 10 seconds for Supabase to refresh its schema cache.'
             });
           }
           throw dbError;
@@ -498,6 +504,11 @@ const certRoleCommand = {
 
         if (error) {
           logger.error('Error adding role:', error);
+          if (error.code === 'PGRST205' || error.message?.includes('schema cache')) {
+            return interaction.editReply({ 
+              content: '❌ The `mod_roles` table is not found in Supabase schema cache.\n\n**Please:**\n1. Run the SQL from SUPABASE_SETUP.md in Supabase SQL Editor\n2. Wait 10-30 seconds for schema cache to refresh\n3. Try again'
+            });
+          }
           return interaction.editReply({ 
             content: `❌ Error adding role: ${error.message}` 
           });

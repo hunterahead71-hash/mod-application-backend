@@ -339,10 +339,26 @@ async function handleAccept(interaction, appId, discordId, helpers) {
     // ===== CRITICAL: ACTUALLY ASSIGN ROLES =====
     let roleResult = null;
     try {
-      // Force cache bypass for mobile users - use correct guild (Void Esports: 1351362266246680626)
-      const guildId = process.env.DISCORD_GUILD_ID || '1351362266246680626';
-      const guild = await client.guilds.fetch(guildId).catch(() => null) || client.guilds.cache.find(g => g.name?.toLowerCase().includes('void')) || client.guilds.cache.first();
-      if (guild) await guild.members.fetch({ force: true });
+      // Use Void Esports guild ID directly (1351362266246680626) - ignore env if wrong
+      const voidGuildId = '1351362266246680626';
+      let guild = client.guilds.cache.get(voidGuildId);
+      if (!guild) {
+        // Try to fetch Void guild first
+        guild = await client.guilds.fetch(voidGuildId).catch(() => null);
+      }
+      if (!guild) {
+        // Fallback: find any guild with "void" in name
+        guild = client.guilds.cache.find(g => g.name?.toLowerCase().includes('void'));
+      }
+      if (!guild) {
+        // Last resort: use first available guild
+        guild = client.guilds.cache.first();
+      }
+      
+      if (guild) {
+        await guild.members.fetch({ force: true });
+        logger.info(`Using guild: ${guild.name} (${guild.id}) for role assignment`);
+      }
       
       roleResult = await helpers.assignModRole(discordId, app.discord_username);
       logger.success(`✅ Role assignment result:`, roleResult);
@@ -351,16 +367,18 @@ async function handleAccept(interaction, appId, discordId, helpers) {
     }
 
     // Log to channel
-    await logToChannel(
-      '✅ Application Accepted',
-      `Application #${appId} was accepted by ${interaction.user.tag}`,
-      0x10b981,
-      [
-        { name: '👤 User', value: app.discord_username, inline: true },
-        { name: '📊 Score', value: app.score || 'N/A', inline: true },
-        { name: '🎭 Roles Assigned', value: roleResult?.assigned?.length ? roleResult.assigned.map(r => r.name).join(', ') : 'None', inline: false }
-      ]
-    );
+    try {
+      const { logToChannel } = require("../utils/channelLogger");
+      await logToChannel(
+        '✅ Application Accepted',
+        `Application #${appId} was accepted by ${interaction.user.tag}`,
+        0x10b981,
+        [
+          { name: '👤 User', value: app.discord_username, inline: true },
+          { name: '📊 Score', value: app.score || 'N/A', inline: true },
+          { name: '🎭 Roles Assigned', value: roleResult?.assigned?.length ? roleResult.assigned.map(r => r.name).join(', ') : 'None', inline: false }
+        ]
+      );
     } catch (e) { logger.warn("Log to channel failed:", e.message); }
 
     // Send success message

@@ -106,8 +106,8 @@ async function assignModRole(userId, username = 'User') {
     if (!client) return { success: false, error: "No client" };
     if (!await ensureReady()) return { success: false, error: "Bot not ready" };
 
-    // Use Void Esports guild (1351362266246680626) as default - logs show this is where bot runs
-    const guildId = process.env.DISCORD_GUILD_ID || '1351362266246680626';
+    // Use Void Esports guild ID directly (1351362266246680626) - ignore env if wrong
+    const voidGuildId = '1351362266246680626';
     
     // Fetch roles from database first
     let roleIds = [];
@@ -134,15 +134,21 @@ async function assignModRole(userId, username = 'User') {
       return { success: false, error: "No role IDs configured" };
     }
 
-    // Fetch guild - try env ID first, then Void Esports, then any guild with "void" in name
-    let guild = await client.guilds.fetch(guildId).catch(() => null);
+    // Fetch guild - use Void Esports ID directly, with fallbacks
+    let guild = client.guilds.cache.get(voidGuildId);
     if (!guild) {
-      guild = client.guilds.cache.find(g => g.name?.toLowerCase().includes('void')) || client.guilds.cache.first();
-      if (guild) logger.warn(`Guild ${guildId} not found. Using ${guild.name} (${guild.id}) for role assignment.`);
+      guild = await client.guilds.fetch(voidGuildId).catch(() => null);
     }
     if (!guild) {
-      return { success: false, error: "Guild not found - set DISCORD_GUILD_ID=1351362266246680626" };
+      guild = client.guilds.cache.find(g => g.name?.toLowerCase().includes('void'));
     }
+    if (!guild) {
+      guild = client.guilds.cache.first();
+    }
+    if (!guild) {
+      return { success: false, error: "Guild not found - bot may not be in any servers" };
+    }
+    logger.info(`Using guild: ${guild.name} (${guild.id}) for role assignment`);
 
     // ===== CRITICAL: Force fetch member (bypass cache for mobile) =====
     let member;
