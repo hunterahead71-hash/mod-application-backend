@@ -4,7 +4,9 @@
   "description": "Void Esports Mod Application Backend",
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "deploy-commands": "node deploy-commands.js",
+    "test-commands": "node scripts/test-commands.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.38.0",

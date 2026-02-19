@@ -44,12 +44,26 @@ client.once('ready', async () => {
     status: 'online'
   });
 
-  // Register slash commands
-  try {
-    await registerSlashCommands();
-  } catch (error) {
-    logger.error("❌ Failed to register commands:", error);
-  }
+  // Register slash commands with retry logic
+  let retries = 0;
+  const maxRetries = 3;
+  
+  const registerWithRetry = async () => {
+    try {
+      await registerSlashCommands();
+    } catch (error) {
+      retries++;
+      logger.error(`❌ Failed to register commands (attempt ${retries}/${maxRetries}):`, error);
+      if (retries < maxRetries) {
+        logger.info(`⏳ Retrying in 5 seconds...`);
+        setTimeout(registerWithRetry, 5000);
+      } else {
+        logger.error("❌ Max retries reached. Commands may not be registered.");
+      }
+    }
+  };
+  
+  await registerWithRetry();
 
   // Check guild and roles
   if (process.env.DISCORD_GUILD_ID) {
@@ -110,7 +124,9 @@ async function registerSlashCommands() {
       slashCommands.bulkCommand.data.toJSON(),
       slashCommands.simulateCommand.data.toJSON(),
       slashCommands.questionStatsCommand.data.toJSON(),
-      slashCommands.quickActionsCommand.data.toJSON()
+      slashCommands.quickActionsCommand.data.toJSON(),
+      slashCommands.botStatusCommand.data.toJSON(),
+      slashCommands.helpCommand.data.toJSON()
     ];
 
     logger.info(`🚀 Registering ${commands.length} application (/) commands...`);
@@ -137,6 +153,12 @@ async function registerSlashCommands() {
     logger.error("❌ Error registering slash commands:", error);
     logger.error("Error details:", error.message);
     if (error.stack) logger.error("Stack:", error.stack);
+    
+    // Log each command being registered for debugging
+    logger.info("Commands being registered:");
+    commands.forEach((cmd, idx) => {
+      logger.info(`  ${idx + 1}. ${cmd.name} - ${cmd.description}`);
+    });
   }
 }
 
@@ -163,25 +185,25 @@ client.on('interactionCreate', async (interaction) => {
     try {
       const commandName = interaction.commandName;
 
-      if (commandName === 'test-question') {
-        await slashCommands.testQuestionCommand.execute(interaction);
-      } else if (commandName === 'cert-role') {
-        await slashCommands.certRoleCommand.execute(interaction);
-      } else if (commandName === 'cert-analytics') {
-        await slashCommands.analyticsCommand.execute(interaction);
-      } else if (commandName === 'cert-bulk') {
-        await slashCommands.bulkCommand.execute(interaction);
-      } else if (commandName === 'cert-simulate') {
-        await slashCommands.simulateCommand.execute(interaction);
-      } else if (commandName === 'cert-question-stats') {
-        await slashCommands.questionStatsCommand.execute(interaction);
-      } else if (commandName === 'cert-quick') {
-        await slashCommands.quickActionsCommand.execute(interaction);
+      // Route commands to their handlers
+      const commandMap = {
+        'test-question': slashCommands.testQuestionCommand,
+        'cert-role': slashCommands.certRoleCommand,
+        'cert-analytics': slashCommands.analyticsCommand,
+        'cert-bulk': slashCommands.bulkCommand,
+        'cert-simulate': slashCommands.simulateCommand,
+        'cert-question-stats': slashCommands.questionStatsCommand,
+        'cert-quick': slashCommands.quickActionsCommand,
+        'cert-status': slashCommands.botStatusCommand,
+        'cert-help': slashCommands.helpCommand
+      };
+
+      const commandHandler = commandMap[commandName];
+      if (commandHandler) {
+        await commandHandler.execute(interaction);
       } else {
-        // Unknown command
-        await interaction.editReply({ 
-          content: `❌ Unknown command: ${commandName}\n\nAvailable commands:\n- /test-question\n- /cert-role\n- /cert-analytics\n- /cert-bulk\n- /cert-simulate\n- /cert-question-stats\n- /cert-quick` 
-        });
+        // Unknown command - show help
+        await slashCommands.helpCommand.execute(interaction);
       }
     } catch (error) {
       logger.error("❌ Slash command error:", error);

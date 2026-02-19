@@ -1,17 +1,28 @@
 // Standalone command deployment script
 // Run this separately to deploy commands: node deploy-commands.js
+// Or use: npm run deploy-commands
 
 const { REST, Routes } = require('discord.js');
-require('dotenv').config();
+
+// Load environment variables
+try {
+  require('dotenv').config();
+} catch (e) {
+  // dotenv not available, use process.env directly
+}
+
+const slashCommands = require('./commands/slashCommands');
 
 const commands = [
-  require('./commands/slashCommands').testQuestionCommand.data.toJSON(),
-  require('./commands/slashCommands').certRoleCommand.data.toJSON(),
-  require('./commands/slashCommands').analyticsCommand.data.toJSON(),
-  require('./commands/slashCommands').bulkCommand.data.toJSON(),
-  require('./commands/slashCommands').simulateCommand.data.toJSON(),
-  require('./commands/slashCommands').questionStatsCommand.data.toJSON(),
-  require('./commands/slashCommands').quickActionsCommand.data.toJSON()
+  slashCommands.testQuestionCommand.data.toJSON(),
+  slashCommands.certRoleCommand.data.toJSON(),
+  slashCommands.analyticsCommand.data.toJSON(),
+  slashCommands.bulkCommand.data.toJSON(),
+  slashCommands.simulateCommand.data.toJSON(),
+  slashCommands.questionStatsCommand.data.toJSON(),
+  slashCommands.quickActionsCommand.data.toJSON(),
+  slashCommands.botStatusCommand.data.toJSON(),
+  slashCommands.helpCommand.data.toJSON()
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);

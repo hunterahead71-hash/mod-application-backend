@@ -103,9 +103,7 @@ const testQuestionCommand = {
             .setRequired(true))),
   
   async execute(interaction) {
-    // Check if already deferred (should be deferred by main handler)
     const alreadyDeferred = interaction.deferred || interaction.replied;
-    
     if (!alreadyDeferred) {
       await interaction.deferReply({ ephemeral: true });
     }
@@ -128,7 +126,6 @@ const testQuestionCommand = {
 
         const keywords = keywordsStr.split(',').map(k => k.trim()).filter(k => k);
 
-        // Get max order value
         const { data: maxOrderData } = await supabase
           .from('test_questions')
           .select('order')
@@ -343,9 +340,7 @@ const certRoleCommand = {
         .setDescription('List all certification roles')),
   
   async execute(interaction) {
-    // Check if already deferred (should be deferred by main handler)
     const alreadyDeferred = interaction.deferred || interaction.replied;
-    
     if (!alreadyDeferred) {
       await interaction.deferReply({ ephemeral: true });
     }
@@ -363,13 +358,11 @@ const certRoleCommand = {
         const roleInput = interaction.options.getString('role');
         const description = interaction.options.getString('description') || '';
 
-        // Extract role ID from mention or use as-is
         let roleId = roleInput;
         if (roleInput.startsWith('<@&') && roleInput.endsWith('>')) {
           roleId = roleInput.slice(3, -1);
         }
 
-        // Verify role exists
         const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
         if (!role) {
           return interaction.editReply({ 
@@ -377,7 +370,6 @@ const certRoleCommand = {
           });
         }
 
-        // Check if role already exists
         const { data: existing } = await supabase
           .from('mod_roles')
           .select('*')
@@ -413,7 +405,6 @@ const certRoleCommand = {
       } else if (subcommand === 'remove') {
         const roleInput = interaction.options.getString('role');
 
-        // Extract role ID from mention or use as-is
         let roleId = roleInput;
         if (roleInput.startsWith('<@&') && roleInput.endsWith('>')) {
           roleId = roleInput.slice(3, -1);
@@ -486,7 +477,7 @@ const certRoleCommand = {
   }
 };
 
-// ==================== ADVANCED ANALYTICS COMMAND ====================
+// ==================== ANALYTICS COMMAND ====================
 const analyticsCommand = {
   data: new SlashCommandBuilder()
     .setName('cert-analytics')
@@ -513,18 +504,17 @@ const analyticsCommand = {
             .setRequired(false))),
   
   async execute(interaction) {
-    // Check if already deferred (should be deferred by main handler)
     const alreadyDeferred = interaction.deferred || interaction.replied;
-    
     if (!alreadyDeferred) {
       await interaction.deferReply({ ephemeral: true });
     }
 
     if (!await isAdmin(interaction.member)) {
       return interaction.editReply({ 
-        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+        content: '❌ You do not have permission to use this command.' 
       });
     }
+
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -671,18 +661,17 @@ const bulkCommand = {
         .setDescription('Export questions as JSON')),
   
   async execute(interaction) {
-    // Check if already deferred (should be deferred by main handler)
     const alreadyDeferred = interaction.deferred || interaction.replied;
-    
     if (!alreadyDeferred) {
       await interaction.deferReply({ ephemeral: true });
     }
 
     if (!await isAdmin(interaction.member)) {
       return interaction.editReply({ 
-        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+        content: '❌ You do not have permission to use this command.' 
       });
     }
+
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -760,7 +749,7 @@ const bulkCommand = {
   }
 };
 
-// ==================== TEST SIMULATION COMMAND ====================
+// ==================== SIMULATE COMMAND ====================
 const simulateCommand = {
   data: new SlashCommandBuilder()
     .setName('cert-simulate')
@@ -777,16 +766,14 @@ const simulateCommand = {
         .setMaxValue(8)),
   
   async execute(interaction) {
-    // Check if already deferred (should be deferred by main handler)
     const alreadyDeferred = interaction.deferred || interaction.replied;
-    
     if (!alreadyDeferred) {
       await interaction.deferReply({ ephemeral: true });
     }
 
     if (!await isAdmin(interaction.member)) {
       return interaction.editReply({ 
-        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+        content: '❌ You do not have permission to use this command.' 
       });
     }
 
@@ -843,16 +830,14 @@ const questionStatsCommand = {
         .setRequired(false)),
   
   async execute(interaction) {
-    // Check if already deferred (should be deferred by main handler)
     const alreadyDeferred = interaction.deferred || interaction.replied;
-    
     if (!alreadyDeferred) {
       await interaction.deferReply({ ephemeral: true });
     }
 
     if (!await isAdmin(interaction.member)) {
       return interaction.editReply({ 
-        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+        content: '❌ You do not have permission to use this command.' 
       });
     }
 
@@ -860,7 +845,6 @@ const questionStatsCommand = {
       const questionId = interaction.options.getInteger('id');
 
       if (questionId) {
-        // Stats for specific question
         const { data: question, error: qError } = await supabase
           .from('test_questions')
           .select('*')
@@ -873,7 +857,6 @@ const questionStatsCommand = {
           });
         }
 
-        // Count how many times this question appears in tests
         const { data: apps } = await supabase
           .from('applications')
           .select('test_results');
@@ -905,7 +888,6 @@ const questionStatsCommand = {
 
         await interaction.editReply({ embeds: [embed] });
       } else {
-        // Overall question stats
         const { data: questions, error } = await supabase
           .from('test_questions')
           .select('id, enabled, order');
@@ -959,18 +941,17 @@ const quickActionsCommand = {
             .setRequired(false))),
   
   async execute(interaction) {
-    // Check if already deferred (should be deferred by main handler)
     const alreadyDeferred = interaction.deferred || interaction.replied;
-    
     if (!alreadyDeferred) {
       await interaction.deferReply({ ephemeral: true });
     }
 
     if (!await isAdmin(interaction.member)) {
       return interaction.editReply({ 
-        content: '❌ You do not have permission to use this command.\n\nYou need Administrator permission or a role listed in ADMIN_ROLE_IDS.' 
+        content: '❌ You do not have permission to use this command.' 
       });
     }
+
     const subcommand = interaction.options.getSubcommand();
 
     try {
@@ -1071,6 +1052,141 @@ const quickActionsCommand = {
   }
 };
 
+// ==================== BOT STATUS COMMAND (NEW) ====================
+const botStatusCommand = {
+  data: new SlashCommandBuilder()
+    .setName('cert-status')
+    .setDescription('🤖 Check bot status and system health')
+    .addBooleanOption(option =>
+      option.setName('detailed')
+        .setDescription('Show detailed information')
+        .setRequired(false)),
+  
+  async execute(interaction) {
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
+    }
+
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ 
+        content: '❌ You do not have permission to use this command.' 
+      });
+    }
+
+    try {
+      const detailed = interaction.options.getBoolean('detailed') || false;
+      const { getBot, ensureReady } = require('../config/discord');
+      const bot = getBot();
+
+      const botReady = bot && bot.isReady();
+      const uptime = botReady ? Math.floor(process.uptime()) : 0;
+      const uptimeStr = `${Math.floor(uptime / 3600)}h ${Math.floor((uptime % 3600) / 60)}m ${uptime % 60}s`;
+
+      // Database check
+      let dbStatus = '❌ Unknown';
+      try {
+        const { error } = await supabase.from('applications').select('id').limit(1);
+        dbStatus = error ? '❌ Error' : '✅ Connected';
+      } catch {}
+
+      // Count stats
+      const { data: apps } = await supabase.from('applications').select('id');
+      const { data: questions } = await supabase.from('test_questions').select('id');
+      const { data: roles } = await supabase.from('mod_roles').select('id');
+
+      const embed = new EmbedBuilder()
+        .setTitle('🤖 Bot Status')
+        .setColor(botReady ? 0x10b981 : 0xed4245)
+        .addFields(
+          { name: '🟢 Bot Status', value: botReady ? '✅ Online' : '❌ Offline', inline: true },
+          { name: '⏱️ Uptime', value: botReady ? uptimeStr : 'N/A', inline: true },
+          { name: '💾 Database', value: dbStatus, inline: true },
+          { name: '📝 Applications', value: `${apps?.length || 0}`, inline: true },
+          { name: '❓ Questions', value: `${questions?.length || 0}`, inline: true },
+          { name: '🎭 Roles', value: `${roles?.length || 0}`, inline: true }
+        )
+        .setTimestamp();
+
+      if (detailed && botReady) {
+        embed.addFields(
+          { name: '👥 Guilds', value: `${bot.guilds.cache.size}`, inline: true },
+          { name: '👤 Users', value: `${bot.users.cache.size}`, inline: true },
+          { name: '📊 Memory', value: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`, inline: true }
+        );
+      }
+
+      await interaction.editReply({ embeds: [embed] });
+    } catch (error) {
+      logger.error('status error:', error);
+      await interaction.editReply({ 
+        content: `❌ Error: ${error.message}` 
+      });
+    }
+  }
+};
+
+// ==================== HELP COMMAND (NEW) ====================
+const helpCommand = {
+  data: new SlashCommandBuilder()
+    .setName('cert-help')
+    .setDescription('📚 Show help and command list'),
+  
+  async execute(interaction) {
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    if (!alreadyDeferred) {
+      await interaction.deferReply({ ephemeral: true });
+    }
+
+    // Help command is public - no admin check needed
+    const embed = new EmbedBuilder()
+      .setTitle('📚 Void Esports Certification Bot - Commands')
+      .setDescription('All commands require Administrator permission or admin role.')
+      .setColor(0x5865f2)
+      .addFields(
+        {
+          name: '📝 Question Management',
+          value: '`/test-question` - Manage test questions\n• `add` - Add new question\n• `edit` - Edit question\n• `delete` - Delete question\n• `list` - List all questions\n• `reorder` - Change order\n• `enable/disable` - Toggle question',
+          inline: false
+        },
+        {
+          name: '🎭 Role Management',
+          value: '`/cert-role` - Manage certification roles\n• `add` - Add role\n• `remove` - Remove role\n• `list` - List roles',
+          inline: false
+        },
+        {
+          name: '📊 Analytics',
+          value: '`/cert-analytics` - View statistics\n• `overview` - Overall stats\n• `user` - User stats\n• `recent` - Recent submissions',
+          inline: false
+        },
+        {
+          name: '⚡ Bulk Operations',
+          value: '`/cert-bulk` - Bulk actions\n• `enable-all` - Enable all questions\n• `disable-all` - Disable all\n• `reorder-auto` - Auto-reorder\n• `export` - Export as JSON',
+          inline: false
+        },
+        {
+          name: '🎮 Testing',
+          value: '`/cert-simulate` - Simulate test submission\n`/cert-question-stats` - Question statistics',
+          inline: false
+        },
+        {
+          name: '⚡ Quick Actions',
+          value: '`/cert-quick` - Quick tasks\n• `accept-latest` - Accept latest\n• `reject-low-scores` - Auto-reject low scores\n• `cleanup-old` - Clean old apps',
+          inline: false
+        },
+        {
+          name: '🤖 System',
+          value: '`/cert-status` - Bot status\n`/cert-help` - This help message',
+          inline: false
+        }
+      )
+      .setFooter({ text: 'Void Esports Certification System' })
+      .setTimestamp();
+
+    await interaction.editReply({ embeds: [embed] });
+  }
+};
+
 module.exports = {
   testQuestionCommand,
   certRoleCommand,
@@ -1078,5 +1194,7 @@ module.exports = {
   bulkCommand,
   simulateCommand,
   questionStatsCommand,
-  quickActionsCommand
+  quickActionsCommand,
+  botStatusCommand,
+  helpCommand
 };
