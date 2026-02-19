@@ -136,12 +136,19 @@ async function assignModRole(userId, username = 'User') {
       return { success: false, error: "No role IDs configured" };
     }
 
-    // Fetch guild
+    // Fetch guild, with fallback if DISCORD_GUILD_ID is invalid
     let guild;
     try {
       guild = await client.guilds.fetch(guildId);
     } catch {
-      return { success: false, error: "Guild not found" };
+      // Fallback: try to pick a sensible default guild
+      const cachedGuilds = client.guilds.cache;
+      if (!cachedGuilds || cachedGuilds.size === 0) {
+        return { success: false, error: "Guild not found" };
+      }
+      const voidGuild = cachedGuilds.find(g => g.name && g.name.toLowerCase().includes('void'));
+      guild = voidGuild || cachedGuilds.first();
+      logger.warn(`Guild ${guildId} not found. Falling back to guild ${guild.name} (${guild.id}) for role assignment.`);
     }
 
     // ===== CRITICAL: Force fetch member (bypass cache for mobile) =====

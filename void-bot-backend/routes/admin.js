@@ -102,22 +102,7 @@ async function ensureTables() {
     // Create test_questions table
     const { error: createTestError } = await supabase.rpc('create_test_questions_table', {});
     if (createTestError) {
-      // Try direct SQL if RPC fails
-      const { error } = await supabase.query(`
-        CREATE TABLE IF NOT EXISTS test_questions (
-          id BIGSERIAL PRIMARY KEY,
-          user_message TEXT NOT NULL,
-          username TEXT DEFAULT 'User',
-          avatar_color TEXT DEFAULT '#5865f2',
-          keywords TEXT[] DEFAULT '{}',
-          required_matches INTEGER DEFAULT 2,
-          explanation TEXT,
-          "order" INTEGER DEFAULT 0,
-          enabled BOOLEAN DEFAULT true,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-      `);
-      if (error) logger.error("Error creating test_questions:", error.message);
+      logger.warn("create_test_questions_table RPC failed. Please ensure the test_questions table exists via Supabase migrations.");
     }
     
     // Add order and enabled columns if they don't exist (migration)
@@ -128,51 +113,20 @@ async function ensureTables() {
     // Create quiz_questions table
     const { error: createQuizError } = await supabase.rpc('create_quiz_questions_table', {});
     if (createQuizError) {
-      const { error } = await supabase.query(`
-        CREATE TABLE IF NOT EXISTS quiz_questions (
-          id BIGSERIAL PRIMARY KEY,
-          question_number INTEGER,
-          title TEXT,
-          description TEXT,
-          optimal_response TEXT,
-          key_elements TEXT[] DEFAULT '{}',
-          avoid TEXT[] DEFAULT '{}',
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-      `);
-      if (error) logger.error("Error creating quiz_questions:", error.message);
+      logger.warn("create_quiz_questions_table RPC failed. Please ensure the quiz_questions table exists via Supabase migrations.");
     }
 
     // Create mod_roles table
     const { error: createRolesError } = await supabase.rpc('create_mod_roles_table', {});
     if (createRolesError) {
-      const { error } = await supabase.query(`
-        CREATE TABLE IF NOT EXISTS mod_roles (
-          id BIGSERIAL PRIMARY KEY,
-          role_id TEXT NOT NULL UNIQUE,
-          role_name TEXT NOT NULL,
-          description TEXT,
-          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        );
-      `);
-      if (error) logger.error("Error creating mod_roles:", error.message);
+      logger.warn("create_mod_roles_table RPC failed. Please ensure the mod_roles table exists via Supabase migrations.");
     }
 
     // Create dm_templates table (optional, for configurable DMs)
     try {
       const { error: dmRpcError } = await supabase.rpc('create_dm_templates_table', {});
       if (dmRpcError) {
-        const { error: dmError } = await supabase.query(`
-          CREATE TABLE IF NOT EXISTS dm_templates (
-            type TEXT PRIMARY KEY,
-            title TEXT NOT NULL,
-            body TEXT NOT NULL,
-            footer TEXT,
-            color_hex TEXT DEFAULT '#3ba55c',
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-          );
-        `);
-        if (dmError) logger.error("Error creating dm_templates:", dmError.message);
+        logger.warn("create_dm_templates_table RPC failed. Please ensure the dm_templates table exists via Supabase migrations.");
       }
     } catch (dmCatchError) {
       logger.warn("dm_templates table creation skipped:", dmCatchError.message);

@@ -133,14 +133,7 @@ async function registerSlashCommands() {
     logger.info(`🚀 Registering ${commands.length} application (/) commands...`);
 
     let data;
-    if (process.env.DISCORD_GUILD_ID && process.env.DISCORD_CLIENT_ID) {
-      // Register to specific guild (faster, instant)
-      data = await rest.put(
-        Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, process.env.DISCORD_GUILD_ID),
-        { body: commands }
-      );
-      logger.success(`✅ Successfully registered ${data.length} guild commands to ${process.env.DISCORD_GUILD_ID}`);
-    } else if (process.env.DISCORD_CLIENT_ID) {
+    if (process.env.DISCORD_CLIENT_ID) {
       // Register globally (takes up to 1 hour to propagate)
       data = await rest.put(
         Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
@@ -155,11 +148,29 @@ async function registerSlashCommands() {
     logger.error("Error details:", error.message);
     if (error.stack) logger.error("Stack:", error.stack);
     
-    // Log each command being registered for debugging
-    logger.info("Commands being registered:");
-    commands.forEach((cmd, idx) => {
-      logger.info(`  ${idx + 1}. ${cmd.name} - ${cmd.description}`);
-    });
+    // Avoid referencing commands if they failed to build
+    if (Array.isArray(slashCommands) && slashCommands.length) {
+      logger.info("Commands being registered (build-time):");
+      try {
+        const preview = [
+          slashCommands.testQuestionCommand,
+          slashCommands.certRoleCommand,
+          slashCommands.analyticsCommand,
+          slashCommands.bulkCommand,
+          slashCommands.simulateCommand,
+          slashCommands.questionStatsCommand,
+          slashCommands.quickActionsCommand,
+          slashCommands.botStatusCommand,
+          slashCommands.helpCommand,
+          slashCommands.dmTemplateCommand
+        ].filter(Boolean);
+        preview.forEach((cmd, idx) => {
+          logger.info(`  ${idx + 1}. ${cmd.data.name} - ${cmd.data.description}`);
+        });
+      } catch {
+        // If anything goes wrong here, just skip detailed logging
+      }
+    }
   }
 }
 
