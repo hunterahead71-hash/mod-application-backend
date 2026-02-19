@@ -1,0 +1,1054 @@
+const { SlashCommandBuilder, PermissionFlagsBits, EmbedBuilder } = require('discord.js');
+const { supabase } = require('../config/supabase');
+const { logger } = require('../utils/logger');
+
+// ==================== PERMISSION CHECK ====================
+async function isAdmin(member) {
+  if (!member) return false;
+  
+  // Check if user has Administrator permission
+  if (member.permissions.has(PermissionFlagsBits.Administrator)) {
+    return true;
+  }
+  
+  // Check for admin role IDs from env (comma-separated)
+  if (process.env.ADMIN_ROLE_IDS) {
+    const adminRoleIds = process.env.ADMIN_ROLE_IDS.split(',').map(id => id.trim());
+    return adminRoleIds.some(roleId => member.roles.cache.has(roleId));
+  }
+  
+  return false;
+}
+
+// ==================== TEST QUESTION COMMAND (ALL SUBCOMMANDS) ====================
+const testQuestionCommand = {
+  data: new SlashCommandBuilder()
+    .setName('test-question')
+    .setDescription('Manage certification test questions')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('add')
+        .setDescription('Add a new test question')
+        .addStringOption(option =>
+          option.setName('text')
+            .setDescription('The user message/question text')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('username')
+            .setDescription('Username to display (default: User)')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('keywords')
+            .setDescription('Comma-separated keywords (e.g., age,roster,requirement)')
+            .setRequired(false))
+        .addIntegerOption(option =>
+          option.setName('required_matches')
+            .setDescription('Required keyword matches (default: 2)')
+            .setRequired(false))
+        .addStringOption(option =>
+          option.setName('explanation')
+            .setDescription('Explanation/feedback for this question')
+            .setRequired(false)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('edit')
+        .setDescription('Edit a test question')
+        .addIntegerOption(option =>
+          option.setName('id')
+            .setDescription('Question ID')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('text')
+            .setDescription('New question text')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('delete')
+        .setDescription('Delete a test question')
+        .addIntegerOption(option =>
+          option.setName('id')
+            .setDescription('Question ID to delete')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('list')
+        .setDescription('List all test questions'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('reorder')
+        .setDescription('Reorder a test question')
+        .addIntegerOption(option =>
+          option.setName('id')
+            .setDescription('Question ID')
+            .setRequired(true))
+        .addIntegerOption(option =>
+          option.setName('position')
+            .setDescription('New position (0-based)')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('enable')
+        .setDescription('Enable a test question')
+        .addIntegerOption(option =>
+          option.setName('id')
+            .setDescription('Question ID')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('disable')
+        .setDescription('Disable a test question')
+        .addIntegerOption(option =>
+          option.setName('id')
+            .setDescription('Question ID')
+            .setRequired(true))),
+  
+  async execute(interaction) {
+    if (!await isAdmin(interaction.member)) {
+      return interaction.reply({ 
+        content: '❌ You do not have permission to use this command.', 
+        ephemeral: true 
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const subcommand = interaction.options.getSubcommand();
+
+    try {
+      if (subcommand === 'add') {
+        const text = interaction.options.getString('text');
+        const username = interaction.options.getString('username') || 'User';
+        const keywordsStr = interaction.options.getString('keywords') || '';
+        const requiredMatches = interaction.options.getInteger('required_matches') || 2;
+        const explanation = interaction.options.getString('explanation') || '';
+
+        const keywords = keywordsStr.split(',').map(k => k.trim()).filter(k => k);
+
+        // Get max order value
+        const { data: maxOrderData } = await supabase
+          .from('test_questions')
+          .select('order')
+          .order('order', { ascending: false })
+          .limit(1);
+
+        const nextOrder = maxOrderData && maxOrderData.length > 0 
+          ? (maxOrderData[0].order || 0) + 1 
+          : 0;
+
+        const { data, error } = await supabase
+          .from('test_questions')
+          .insert([{
+            user_message: text,
+            username: username,
+            avatar_color: '#5865f2',
+            keywords: keywords,
+            required_matches: requiredMatches,
+            explanation: explanation,
+            order: nextOrder,
+            enabled: true
+          }])
+          .select();
+
+        if (error) {
+          logger.error('Error adding question:', error);
+          return interaction.editReply({ 
+            content: `❌ Error adding question: ${error.message}` 
+          });
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Question added successfully!\n**ID:** ${data[0].id}\n**Text:** ${text.substring(0, 100)}${text.length > 100 ? '...' : ''}` 
+        });
+
+      } else if (subcommand === 'edit') {
+        const id = interaction.options.getInteger('id');
+        const newText = interaction.options.getString('text');
+
+        const { data, error } = await supabase
+          .from('test_questions')
+          .update({ user_message: newText })
+          .eq('id', id)
+          .select();
+
+        if (error) {
+          return interaction.editReply({ 
+            content: `❌ Error updating question: ${error.message}` 
+          });
+        }
+
+        if (!data || data.length === 0) {
+          return interaction.editReply({ 
+            content: `❌ Question with ID ${id} not found.` 
+          });
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Question ${id} updated successfully!` 
+        });
+
+      } else if (subcommand === 'delete') {
+        const id = interaction.options.getInteger('id');
+
+        const { error } = await supabase
+          .from('test_questions')
+          .delete()
+          .eq('id', id);
+
+        if (error) {
+          return interaction.editReply({ 
+            content: `❌ Error deleting question: ${error.message}` 
+          });
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Question ${id} deleted successfully!` 
+        });
+
+      } else if (subcommand === 'list') {
+        const { data, error } = await supabase
+          .from('test_questions')
+          .select('*')
+          .order('order', { ascending: true });
+
+        if (error) {
+          return interaction.editReply({ 
+            content: `❌ Error fetching questions: ${error.message}` 
+          });
+        }
+
+        if (!data || data.length === 0) {
+          return interaction.editReply({ 
+            content: '📋 No questions found. Use `/test-question add` to add questions.' 
+          });
+        }
+
+        const enabledCount = data.filter(q => q.enabled).length;
+        const disabledCount = data.length - enabledCount;
+
+        const embed = new EmbedBuilder()
+          .setTitle('📋 Test Questions')
+          .setDescription(`Total: ${data.length} | Enabled: ${enabledCount} | Disabled: ${disabledCount}`)
+          .setColor(0x5865f2);
+
+        let description = '';
+        data.slice(0, 10).forEach(q => {
+          const status = q.enabled ? '✅' : '❌';
+          description += `${status} **#${q.id}** (Order: ${q.order || 0}) - ${q.user_message.substring(0, 60)}${q.user_message.length > 60 ? '...' : ''}\n`;
+        });
+
+        if (data.length > 10) {
+          description += `\n... and ${data.length - 10} more`;
+        }
+
+        embed.setDescription(description);
+
+        await interaction.editReply({ embeds: [embed] });
+
+      } else if (subcommand === 'reorder') {
+        const id = interaction.options.getInteger('id');
+        const position = interaction.options.getInteger('position');
+
+        const { error } = await supabase
+          .from('test_questions')
+          .update({ order: position })
+          .eq('id', id);
+
+        if (error) {
+          return interaction.editReply({ 
+            content: `❌ Error reordering question: ${error.message}` 
+          });
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Question ${id} moved to position ${position}!` 
+        });
+
+      } else if (subcommand === 'enable') {
+        const id = interaction.options.getInteger('id');
+
+        const { error } = await supabase
+          .from('test_questions')
+          .update({ enabled: true })
+          .eq('id', id);
+
+        if (error) {
+          return interaction.editReply({ 
+            content: `❌ Error enabling question: ${error.message}` 
+          });
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Question ${id} enabled!` 
+        });
+
+      } else if (subcommand === 'disable') {
+        const id = interaction.options.getInteger('id');
+
+        const { error } = await supabase
+          .from('test_questions')
+          .update({ enabled: false })
+          .eq('id', id);
+
+        if (error) {
+          return interaction.editReply({ 
+            content: `❌ Error disabling question: ${error.message}` 
+          });
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Question ${id} disabled!` 
+        });
+      }
+    } catch (error) {
+      logger.error(`test-question ${subcommand} error:`, error);
+      await interaction.editReply({ 
+        content: `❌ Error: ${error.message}` 
+      });
+    }
+  }
+};
+
+// ==================== CERT ROLE COMMAND (ALL SUBCOMMANDS) ====================
+const certRoleCommand = {
+  data: new SlashCommandBuilder()
+    .setName('cert-role')
+    .setDescription('Manage certification roles')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('add')
+        .setDescription('Add a role to be assigned on certification acceptance')
+        .addStringOption(option =>
+          option.setName('role')
+            .setDescription('Role mention or ID')
+            .setRequired(true))
+        .addStringOption(option =>
+          option.setName('description')
+            .setDescription('Description of this role')
+            .setRequired(false)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('remove')
+        .setDescription('Remove a certification role')
+        .addStringOption(option =>
+          option.setName('role')
+            .setDescription('Role mention or ID')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('list')
+        .setDescription('List all certification roles')),
+  
+  async execute(interaction) {
+    if (!await isAdmin(interaction.member)) {
+      return interaction.reply({ 
+        content: '❌ You do not have permission to use this command.', 
+        ephemeral: true 
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const subcommand = interaction.options.getSubcommand();
+
+    try {
+      if (subcommand === 'add') {
+        const roleInput = interaction.options.getString('role');
+        const description = interaction.options.getString('description') || '';
+
+        // Extract role ID from mention or use as-is
+        let roleId = roleInput;
+        if (roleInput.startsWith('<@&') && roleInput.endsWith('>')) {
+          roleId = roleInput.slice(3, -1);
+        }
+
+        // Verify role exists
+        const role = await interaction.guild.roles.fetch(roleId).catch(() => null);
+        if (!role) {
+          return interaction.editReply({ 
+            content: `❌ Role not found. Please provide a valid role mention or ID.` 
+          });
+        }
+
+        // Check if role already exists
+        const { data: existing } = await supabase
+          .from('mod_roles')
+          .select('*')
+          .eq('role_id', roleId)
+          .single();
+
+        if (existing) {
+          return interaction.editReply({ 
+            content: `❌ Role ${role.name} is already configured.` 
+          });
+        }
+
+        const { data, error } = await supabase
+          .from('mod_roles')
+          .insert([{
+            role_id: roleId,
+            role_name: role.name,
+            description: description
+          }])
+          .select();
+
+        if (error) {
+          logger.error('Error adding role:', error);
+          return interaction.editReply({ 
+            content: `❌ Error adding role: ${error.message}` 
+          });
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Role **${role.name}** added successfully!\n**ID:** ${roleId}` 
+        });
+
+      } else if (subcommand === 'remove') {
+        const roleInput = interaction.options.getString('role');
+
+        // Extract role ID from mention or use as-is
+        let roleId = roleInput;
+        if (roleInput.startsWith('<@&') && roleInput.endsWith('>')) {
+          roleId = roleInput.slice(3, -1);
+        }
+
+        const { data, error } = await supabase
+          .from('mod_roles')
+          .delete()
+          .eq('role_id', roleId)
+          .select();
+
+        if (error) {
+          return interaction.editReply({ 
+            content: `❌ Error removing role: ${error.message}` 
+          });
+        }
+
+        if (!data || data.length === 0) {
+          return interaction.editReply({ 
+            content: `❌ Role not found in configuration.` 
+          });
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Role **${data[0].role_name}** removed successfully!` 
+        });
+
+      } else if (subcommand === 'list') {
+        const { data, error } = await supabase
+          .from('mod_roles')
+          .select('*')
+          .order('id', { ascending: true });
+
+        if (error) {
+          return interaction.editReply({ 
+            content: `❌ Error fetching roles: ${error.message}` 
+          });
+        }
+
+        if (!data || data.length === 0) {
+          return interaction.editReply({ 
+            content: '📋 No roles configured. Use `/cert-role add` to add roles.' 
+          });
+        }
+
+        const embed = new EmbedBuilder()
+          .setTitle('📋 Certification Roles')
+          .setDescription(`Total: ${data.length} role(s)`)
+          .setColor(0x5865f2);
+
+        let description = '';
+        for (const role of data) {
+          const roleMention = `<@&${role.role_id}>`;
+          description += `**${role.role_name}** ${roleMention}\n`;
+          if (role.description) {
+            description += `  └ ${role.description}\n`;
+          }
+        }
+
+        embed.setDescription(description);
+
+        await interaction.editReply({ embeds: [embed] });
+      }
+    } catch (error) {
+      logger.error(`cert-role ${subcommand} error:`, error);
+      await interaction.editReply({ 
+        content: `❌ Error: ${error.message}` 
+      });
+    }
+  }
+};
+
+// ==================== ADVANCED ANALYTICS COMMAND ====================
+const analyticsCommand = {
+  data: new SlashCommandBuilder()
+    .setName('cert-analytics')
+    .setDescription('📊 View certification test analytics and statistics')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('overview')
+        .setDescription('Get overall statistics'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('user')
+        .setDescription('Get stats for a specific user')
+        .addStringOption(option =>
+          option.setName('user')
+            .setDescription('User mention or ID')
+            .setRequired(true)))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('recent')
+        .setDescription('View recent test submissions')
+        .addIntegerOption(option =>
+          option.setName('limit')
+            .setDescription('Number of results (default: 10)')
+            .setRequired(false))),
+  
+  async execute(interaction) {
+    if (!await isAdmin(interaction.member)) {
+      return interaction.reply({ 
+        content: '❌ You do not have permission to use this command.', 
+        ephemeral: true 
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    const subcommand = interaction.options.getSubcommand();
+
+    try {
+      if (subcommand === 'overview') {
+        const { data: apps, error } = await supabase
+          .from('applications')
+          .select('status, score, correct_answers, total_questions, created_at');
+
+        if (error) throw error;
+
+        const total = apps.length;
+        const pending = apps.filter(a => a.status === 'pending').length;
+        const accepted = apps.filter(a => a.status === 'accepted').length;
+        const rejected = apps.filter(a => a.status === 'rejected').length;
+        
+        const scores = apps
+          .filter(a => a.score)
+          .map(a => {
+            const parts = a.score.split('/');
+            return parts.length === 2 ? parseInt(parts[0]) / parseInt(parts[1]) : 0;
+          });
+        
+        const avgScore = scores.length > 0 
+          ? (scores.reduce((a, b) => a + b, 0) / scores.length * 100).toFixed(1)
+          : 0;
+
+        const embed = new EmbedBuilder()
+          .setTitle('📊 Certification Analytics Overview')
+          .setColor(0x5865f2)
+          .addFields(
+            { name: '📝 Total Applications', value: `${total}`, inline: true },
+            { name: '⏳ Pending', value: `${pending}`, inline: true },
+            { name: '✅ Accepted', value: `${accepted}`, inline: true },
+            { name: '❌ Rejected', value: `${rejected}`, inline: true },
+            { name: '📈 Average Score', value: `${avgScore}%`, inline: true },
+            { name: '🎯 Pass Rate', value: `${total > 0 ? ((accepted / total) * 100).toFixed(1) : 0}%`, inline: true }
+          )
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+
+      } else if (subcommand === 'user') {
+        const userInput = interaction.options.getString('user');
+        let userId = userInput;
+        if (userInput.startsWith('<@') && userInput.endsWith('>')) {
+          userId = userInput.slice(2, -1);
+        }
+
+        const { data: apps, error } = await supabase
+          .from('applications')
+          .select('*')
+          .eq('discord_id', userId)
+          .order('created_at', { ascending: false });
+
+        if (error) throw error;
+
+        if (!apps || apps.length === 0) {
+          return interaction.editReply({ 
+            content: `❌ No test submissions found for that user.` 
+          });
+        }
+
+        const latest = apps[0];
+        const passed = apps.filter(a => {
+          const score = a.score ? a.score.split('/') : ['0', '8'];
+          return parseInt(score[0]) >= 6;
+        }).length;
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📊 Analytics for ${latest.discord_username}`)
+          .setColor(0x5865f2)
+          .addFields(
+            { name: '📝 Total Submissions', value: `${apps.length}`, inline: true },
+            { name: '✅ Passed', value: `${passed}`, inline: true },
+            { name: '📊 Latest Score', value: latest.score || 'N/A', inline: true },
+            { name: '📅 Latest Submission', value: new Date(latest.created_at).toLocaleDateString(), inline: true },
+            { name: '📋 Status', value: latest.status || 'pending', inline: true }
+          )
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+
+      } else if (subcommand === 'recent') {
+        const limit = interaction.options.getInteger('limit') || 10;
+        
+        const { data: apps, error } = await supabase
+          .from('applications')
+          .select('discord_username, score, status, created_at')
+          .order('created_at', { ascending: false })
+          .limit(limit);
+
+        if (error) throw error;
+
+        if (!apps || apps.length === 0) {
+          return interaction.editReply({ 
+            content: '📋 No recent submissions found.' 
+          });
+        }
+
+        let description = '';
+        apps.forEach((app, idx) => {
+          const date = new Date(app.created_at).toLocaleDateString();
+          const statusEmoji = app.status === 'accepted' ? '✅' : app.status === 'rejected' ? '❌' : '⏳';
+          description += `${statusEmoji} **${app.discord_username}** - ${app.score || 'N/A'} (${date})\n`;
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📋 Recent Submissions (Last ${limit})`)
+          .setDescription(description)
+          .setColor(0x5865f2)
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+      }
+    } catch (error) {
+      logger.error(`analytics ${subcommand} error:`, error);
+      await interaction.editReply({ 
+        content: `❌ Error: ${error.message}` 
+      });
+    }
+  }
+};
+
+// ==================== BULK OPERATIONS COMMAND ====================
+const bulkCommand = {
+  data: new SlashCommandBuilder()
+    .setName('cert-bulk')
+    .setDescription('⚡ Perform bulk operations on questions and applications')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('enable-all')
+        .setDescription('Enable all disabled questions'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('disable-all')
+        .setDescription('Disable all questions'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('reorder-auto')
+        .setDescription('Auto-reorder questions by ID'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('export')
+        .setDescription('Export questions as JSON')),
+  
+  async execute(interaction) {
+    if (!await isAdmin(interaction.member)) {
+      return interaction.reply({ 
+        content: '❌ You do not have permission to use this command.', 
+        ephemeral: true 
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    const subcommand = interaction.options.getSubcommand();
+
+    try {
+      if (subcommand === 'enable-all') {
+        const { data, error } = await supabase
+          .from('test_questions')
+          .update({ enabled: true })
+          .eq('enabled', false)
+          .select();
+
+        if (error) throw error;
+
+        await interaction.editReply({ 
+          content: `✅ Enabled ${data?.length || 0} question(s)!` 
+        });
+
+      } else if (subcommand === 'disable-all') {
+        const { data, error } = await supabase
+          .from('test_questions')
+          .update({ enabled: false })
+          .select();
+
+        if (error) throw error;
+
+        await interaction.editReply({ 
+          content: `✅ Disabled ${data?.length || 0} question(s)!` 
+        });
+
+      } else if (subcommand === 'reorder-auto') {
+        const { data: questions, error } = await supabase
+          .from('test_questions')
+          .select('id')
+          .order('id', { ascending: true });
+
+        if (error) throw error;
+
+        let updated = 0;
+        for (let i = 0; i < questions.length; i++) {
+          await supabase
+            .from('test_questions')
+            .update({ order: i })
+            .eq('id', questions[i].id);
+          updated++;
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Auto-reordered ${updated} question(s)!` 
+        });
+
+      } else if (subcommand === 'export') {
+        const { data: questions, error } = await supabase
+          .from('test_questions')
+          .select('*')
+          .order('order', { ascending: true });
+
+        if (error) throw error;
+
+        const json = JSON.stringify(questions, null, 2);
+        const buffer = Buffer.from(json, 'utf-8');
+
+        await interaction.editReply({
+          content: `📦 Exported ${questions.length} question(s)!`,
+          files: [{
+            attachment: buffer,
+            name: `questions_export_${Date.now()}.json`
+          }]
+        });
+      }
+    } catch (error) {
+      logger.error(`bulk ${subcommand} error:`, error);
+      await interaction.editReply({ 
+        content: `❌ Error: ${error.message}` 
+      });
+    }
+  }
+};
+
+// ==================== TEST SIMULATION COMMAND ====================
+const simulateCommand = {
+  data: new SlashCommandBuilder()
+    .setName('cert-simulate')
+    .setDescription('🎮 Simulate a test submission (for testing)')
+    .addUserOption(option =>
+      option.setName('user')
+        .setDescription('User to simulate')
+        .setRequired(true))
+    .addIntegerOption(option =>
+      option.setName('score')
+        .setDescription('Score to simulate (e.g., 7 for 7/8)')
+        .setRequired(true)
+        .setMinValue(0)
+        .setMaxValue(8)),
+  
+  async execute(interaction) {
+    if (!await isAdmin(interaction.member)) {
+      return interaction.reply({ 
+        content: '❌ You do not have permission to use this command.', 
+        ephemeral: true 
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+      const user = interaction.options.getUser('user');
+      const score = interaction.options.getInteger('score');
+      const total = 8;
+
+      const { data, error } = await supabase
+        .from('applications')
+        .insert([{
+          discord_id: user.id,
+          discord_username: user.username,
+          score: `${score}/${total}`,
+          total_questions: total,
+          correct_answers: score,
+          wrong_answers: total - score,
+          status: 'pending',
+          answers: `Simulated test submission - Score: ${score}/${total}`,
+          conversation_log: `Simulated by ${interaction.user.tag}`,
+          test_results: JSON.stringify({
+            score: score,
+            total: total,
+            passed: score >= 6,
+            percentage: Math.round((score / total) * 100),
+            simulated: true,
+            date: new Date().toISOString()
+          })
+        }])
+        .select();
+
+      if (error) throw error;
+
+      await interaction.editReply({ 
+        content: `✅ Simulated test submission for ${user.tag}!\n**Score:** ${score}/${total} (${score >= 6 ? 'PASS' : 'FAIL'})\n**Application ID:** ${data[0].id}` 
+      });
+    } catch (error) {
+      logger.error('simulate error:', error);
+      await interaction.editReply({ 
+        content: `❌ Error: ${error.message}` 
+      });
+    }
+  }
+};
+
+// ==================== QUESTION STATS COMMAND ====================
+const questionStatsCommand = {
+  data: new SlashCommandBuilder()
+    .setName('cert-question-stats')
+    .setDescription('📈 View statistics for specific questions')
+    .addIntegerOption(option =>
+      option.setName('id')
+        .setDescription('Question ID (leave empty for all)')
+        .setRequired(false)),
+  
+  async execute(interaction) {
+    if (!await isAdmin(interaction.member)) {
+      return interaction.reply({ 
+        content: '❌ You do not have permission to use this command.', 
+        ephemeral: true 
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    try {
+      const questionId = interaction.options.getInteger('id');
+
+      if (questionId) {
+        // Stats for specific question
+        const { data: question, error: qError } = await supabase
+          .from('test_questions')
+          .select('*')
+          .eq('id', questionId)
+          .single();
+
+        if (qError || !question) {
+          return interaction.editReply({ 
+            content: `❌ Question ${questionId} not found.` 
+          });
+        }
+
+        // Count how many times this question appears in tests
+        const { data: apps } = await supabase
+          .from('applications')
+          .select('test_results');
+
+        let appearances = 0;
+        apps?.forEach(app => {
+          try {
+            const results = typeof app.test_results === 'string' 
+              ? JSON.parse(app.test_results) 
+              : app.test_results;
+            if (results && results.questions) {
+              const found = results.questions.find((q) => q.id === questionId);
+              if (found) appearances++;
+            }
+          } catch {}
+        });
+
+        const embed = new EmbedBuilder()
+          .setTitle(`📈 Question #${questionId} Statistics`)
+          .setColor(0x5865f2)
+          .addFields(
+            { name: '📝 Question Text', value: question.user_message.substring(0, 200) + (question.user_message.length > 200 ? '...' : ''), inline: false },
+            { name: '✅ Status', value: question.enabled ? 'Enabled' : 'Disabled', inline: true },
+            { name: '📍 Order', value: `${question.order || 0}`, inline: true },
+            { name: '🔑 Keywords', value: (question.keywords || []).join(', ') || 'None', inline: false },
+            { name: '📊 Appearances', value: `${appearances}`, inline: true }
+          )
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+      } else {
+        // Overall question stats
+        const { data: questions, error } = await supabase
+          .from('test_questions')
+          .select('id, enabled, order');
+
+        if (error) throw error;
+
+        const enabled = questions.filter(q => q.enabled).length;
+        const disabled = questions.length - enabled;
+
+        const embed = new EmbedBuilder()
+          .setTitle('📈 Question Statistics')
+          .setColor(0x5865f2)
+          .addFields(
+            { name: '📝 Total Questions', value: `${questions.length}`, inline: true },
+            { name: '✅ Enabled', value: `${enabled}`, inline: true },
+            { name: '❌ Disabled', value: `${disabled}`, inline: true }
+          )
+          .setTimestamp();
+
+        await interaction.editReply({ embeds: [embed] });
+      }
+    } catch (error) {
+      logger.error('question-stats error:', error);
+      await interaction.editReply({ 
+        content: `❌ Error: ${error.message}` 
+      });
+    }
+  }
+};
+
+// ==================== QUICK ACTIONS COMMAND ====================
+const quickActionsCommand = {
+  data: new SlashCommandBuilder()
+    .setName('cert-quick')
+    .setDescription('⚡ Quick actions for common tasks')
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('accept-latest')
+        .setDescription('Accept the most recent pending application'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('reject-low-scores')
+        .setDescription('Reject all applications with score < 6'))
+    .addSubcommand(subcommand =>
+      subcommand
+        .setName('cleanup-old')
+        .setDescription('Clean up old rejected applications (30+ days)')
+        .addIntegerOption(option =>
+          option.setName('days')
+            .setDescription('Days old (default: 30)')
+            .setRequired(false))),
+  
+  async execute(interaction) {
+    if (!await isAdmin(interaction.member)) {
+      return interaction.reply({ 
+        content: '❌ You do not have permission to use this command.', 
+        ephemeral: true 
+      });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+    const subcommand = interaction.options.getSubcommand();
+
+    try {
+      if (subcommand === 'accept-latest') {
+        const { data: latest, error } = await supabase
+          .from('applications')
+          .select('*')
+          .eq('status', 'pending')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+
+        if (error || !latest) {
+          return interaction.editReply({ 
+            content: '❌ No pending applications found.' 
+          });
+        }
+
+        await supabase
+          .from('applications')
+          .update({
+            status: 'accepted',
+            reviewed_by: interaction.user.tag,
+            reviewed_at: new Date().toISOString()
+          })
+          .eq('id', latest.id);
+
+        const { assignModRole } = require('../utils/discordHelpers');
+        await assignModRole(latest.discord_id, latest.discord_username);
+
+        await interaction.editReply({ 
+          content: `✅ Accepted latest application from **${latest.discord_username}**!\n**Score:** ${latest.score}` 
+        });
+
+      } else if (subcommand === 'reject-low-scores') {
+        const { data: apps, error } = await supabase
+          .from('applications')
+          .select('*')
+          .eq('status', 'pending');
+
+        if (error) throw error;
+
+        let rejected = 0;
+        for (const app of apps) {
+          const score = app.score ? app.score.split('/') : ['0', '8'];
+          const scoreValue = parseInt(score[0]) || 0;
+          
+          if (scoreValue < 6) {
+            await supabase
+              .from('applications')
+              .update({
+                status: 'rejected',
+                rejection_reason: 'Automated: Score below passing threshold',
+                reviewed_by: interaction.user.tag,
+                reviewed_at: new Date().toISOString()
+              })
+              .eq('id', app.id);
+            rejected++;
+          }
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Rejected ${rejected} application(s) with scores below 6.` 
+        });
+
+      } else if (subcommand === 'cleanup-old') {
+        const days = interaction.options.getInteger('days') || 30;
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - days);
+
+        const { data: apps, error } = await supabase
+          .from('applications')
+          .select('id')
+          .eq('status', 'rejected')
+          .lt('created_at', cutoffDate.toISOString());
+
+        if (error) throw error;
+
+        let deleted = 0;
+        for (const app of apps) {
+          await supabase
+            .from('applications')
+            .delete()
+            .eq('id', app.id);
+          deleted++;
+        }
+
+        await interaction.editReply({ 
+          content: `✅ Cleaned up ${deleted} old rejected application(s) (older than ${days} days).` 
+        });
+      }
+    } catch (error) {
+      logger.error(`quick ${subcommand} error:`, error);
+      await interaction.editReply({ 
+        content: `❌ Error: ${error.message}` 
+      });
+    }
+  }
+};
+
+module.exports = {
+  testQuestionCommand,
+  certRoleCommand,
+  analyticsCommand,
+  bulkCommand,
+  simulateCommand,
+  questionStatsCommand,
+  quickActionsCommand
+};

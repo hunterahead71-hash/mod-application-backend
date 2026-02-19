@@ -266,4 +266,28 @@ router.get("/user/:discordId", async (req, res) => {
   }
 });
 
+// ===== GET ACTIVE TEST QUESTIONS (PUBLIC - NO AUTH REQUIRED) =====
+router.get("/api/test-questions/active", async (req, res) => {
+  try {
+    const { supabase } = require("../config/supabase");
+    const { data, error } = await supabase
+      .from("test_questions")
+      .select("*")
+      .eq("enabled", true)
+      .order("order", { ascending: true })
+      .order("id", { ascending: true });
+    
+    if (error) {
+      logger.warn("Active test questions error:", error.message);
+      // Return empty array if DB fails - frontend will use defaults
+      return res.json({ success: true, questions: [] });
+    }
+    
+    res.json({ success: true, questions: data || [] });
+  } catch (err) {
+    logger.error("Get active test questions error:", err);
+    res.json({ success: true, questions: [] });
+  }
+});
+
 module.exports = router;

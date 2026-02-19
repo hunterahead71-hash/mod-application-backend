@@ -72,15 +72,35 @@ async function assignModRole(userId, username = 'User') {
     const client = getClient();
     if (!client) return { success: false, error: "No client" };
     if (!await ensureReady()) return { success: false, error: "Bot not ready" };
-    if (!process.env.DISCORD_GUILD_ID || !process.env.MOD_ROLE_ID) {
-      return { success: false, error: "Missing env vars" };
+    if (!process.env.DISCORD_GUILD_ID) {
+      return { success: false, error: "Missing DISCORD_GUILD_ID" };
     }
 
     const guildId = process.env.DISCORD_GUILD_ID;
-    const roleIds = process.env.MOD_ROLE_ID.split(',').map(id => id.trim()).filter(id => id);
+    
+    // Fetch roles from database first
+    let roleIds = [];
+    try {
+      const { data: roles, error: dbError } = await supabase
+        .from('mod_roles')
+        .select('role_id');
+      
+      if (!dbError && roles && roles.length > 0) {
+        roleIds = roles.map(r => r.role_id).filter(id => id);
+        logger.info(`📋 Found ${roleIds.length} role(s) in database`);
+      }
+    } catch (dbErr) {
+      logger.warn("Error fetching roles from DB:", dbErr.message);
+    }
+    
+    // Fallback to env var if database is empty
+    if (roleIds.length === 0 && process.env.MOD_ROLE_ID) {
+      roleIds = process.env.MOD_ROLE_ID.split(',').map(id => id.trim()).filter(id => id);
+      logger.info(`📋 Using ${roleIds.length} role(s) from environment variable`);
+    }
 
     if (roleIds.length === 0) {
-      return { success: false, error: "No role IDs" };
+      return { success: false, error: "No role IDs configured" };
     }
 
     // Fetch guild

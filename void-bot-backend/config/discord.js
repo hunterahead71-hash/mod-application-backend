@@ -44,6 +44,9 @@ client.on('clientReady', async () => {
     status: 'online'
   });
 
+  // Register slash commands
+  await registerSlashCommands();
+
   // Check guild and roles
   if (process.env.DISCORD_GUILD_ID) {
     try {
@@ -87,8 +90,81 @@ client.on('warn', (warning) => {
   logger.warn('⚠️ Discord client warning:', warning);
 });
 
-// ==================== BUTTON HANDLERS ====================
+// ==================== SLASH COMMAND HANDLERS ====================
+const slashCommands = require('../commands/slashCommands');
+
+// Register slash commands
+async function registerSlashCommands() {
+  try {
+    const commands = [
+      slashCommands.testQuestionCommand.data,
+      slashCommands.certRoleCommand.data,
+      slashCommands.analyticsCommand.data,
+      slashCommands.bulkCommand.data,
+      slashCommands.simulateCommand.data,
+      slashCommands.questionStatsCommand.data,
+      slashCommands.quickActionsCommand.data
+    ];
+
+    if (process.env.DISCORD_GUILD_ID) {
+      // Register to specific guild (faster, for testing)
+      const guild = await client.guilds.fetch(process.env.DISCORD_GUILD_ID);
+      await guild.commands.set(commands);
+      logger.success(`✅ Registered ${commands.length} slash commands to guild ${guild.name}`);
+    } else {
+      // Register globally (takes up to 1 hour to propagate)
+      await client.application.commands.set(commands);
+      logger.success(`✅ Registered ${commands.length} slash commands globally`);
+    }
+  } catch (error) {
+    logger.error("❌ Error registering slash commands:", error);
+  }
+}
+
+// ==================== INTERACTION HANDLERS ====================
 client.on('interactionCreate', async (interaction) => {
+  // Handle slash commands
+  if (interaction.isChatInputCommand()) {
+    logger.info(`🔧 Slash command: ${interaction.commandName} by ${interaction.user.tag}`);
+
+    try {
+      const commandName = interaction.commandName;
+
+      if (commandName === 'test-question') {
+        await slashCommands.testQuestionCommand.execute(interaction);
+      } else if (commandName === 'cert-role') {
+        await slashCommands.certRoleCommand.execute(interaction);
+      } else if (commandName === 'cert-analytics') {
+        await slashCommands.analyticsCommand.execute(interaction);
+      } else if (commandName === 'cert-bulk') {
+        await slashCommands.bulkCommand.execute(interaction);
+      } else if (commandName === 'cert-simulate') {
+        await slashCommands.simulateCommand.execute(interaction);
+      } else if (commandName === 'cert-question-stats') {
+        await slashCommands.questionStatsCommand.execute(interaction);
+      } else if (commandName === 'cert-quick') {
+        await slashCommands.quickActionsCommand.execute(interaction);
+      }
+    } catch (error) {
+      logger.error("❌ Slash command error:", error);
+      try {
+        if (interaction.deferred || interaction.replied) {
+          await interaction.editReply({ 
+            content: '❌ Error processing command. Check logs.', 
+            ephemeral: true 
+          }).catch(() => {});
+        } else {
+          await interaction.reply({ 
+            content: '❌ Error processing command. Check logs.', 
+            ephemeral: true 
+          }).catch(() => {});
+        }
+      } catch {}
+    }
+    return;
+  }
+
+  // Handle button interactions
   if (!interaction.isButton()) return;
   
   logger.info(`🔘 Button clicked: ${interaction.customId} by ${interaction.user.tag}`);

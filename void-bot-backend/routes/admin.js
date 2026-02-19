@@ -112,11 +112,18 @@ async function ensureTables() {
           keywords TEXT[] DEFAULT '{}',
           required_matches INTEGER DEFAULT 2,
           explanation TEXT,
+          "order" INTEGER DEFAULT 0,
+          enabled BOOLEAN DEFAULT true,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
       `);
       if (error) logger.error("Error creating test_questions:", error.message);
     }
+    
+    // Add order and enabled columns if they don't exist (migration)
+    // Note: Supabase doesn't support ALTER TABLE directly via JS client
+    // These columns should be added via Supabase dashboard or SQL migration
+    // The table creation above includes them, so existing tables need manual migration
 
     // Create quiz_questions table
     const { error: createQuizError } = await supabase.rpc('create_quiz_questions_table', {});
@@ -1794,13 +1801,14 @@ async function updateDiscordMessage(appId, status, adminName, reason = '') {
 
 // ==================== TEST QUESTIONS API ====================
 
-// Get all test questions
+// Get all test questions (admin view - includes disabled)
 router.get("/api/test-questions", requireAdmin, async (req, res) => {
   try {
     // Try to get from database
     const { data, error } = await supabase
       .from("test_questions")
       .select("*")
+      .order("order", { ascending: true })
       .order("id", { ascending: true });
     
     if (error) {
@@ -1809,14 +1817,14 @@ router.get("/api/test-questions", requireAdmin, async (req, res) => {
       return res.json({ 
         success: true, 
         questions: [
-          { id: 1, user_message: "hey i wanna join void esports, what do i need to do?", username: "FortnitePlayer23", avatar_color: "#5865f2", keywords: ["age","roster","requirement"], required_matches: 2, explanation: "Ask for age and direct to #how-to-join-roster" },
-          { id: 2, user_message: "i want to join as a pro player, i have earnings", username: "CompPlayer99", avatar_color: "#ed4245", keywords: ["tracker","earnings","ping"], required_matches: 2, explanation: "Ask for tracker and ping @trapped" },
-          { id: 3, user_message: "looking to join creative roster, i have clips", username: "CreativeBuilder", avatar_color: "#3ba55c", keywords: ["clip","freebuilding","ping"], required_matches: 2, explanation: "Ask for at least 2 clips" },
-          { id: 4, user_message: "can i join academy? i have 5k PR", username: "AcademyGrinder", avatar_color: "#f59e0b", keywords: ["tracker","username","team.void"], required_matches: 2, explanation: "Ask for tracker and username change" },
-          { id: 5, user_message: "im 14 is that old enough?", username: "YoungPlayer14", avatar_color: "#9146ff", keywords: ["chief","trapped","ping"], required_matches: 2, explanation: "Ping senior staff for verification" },
-          { id: 6, user_message: "i wanna be a void grinder, what's required?", username: "GrinderAccount", avatar_color: "#1da1f2", keywords: ["username","team.void","proof"], required_matches: 2, explanation: "Ask for username change and proof" },
-          { id: 7, user_message: "this server is trash, gonna report it all", username: "ToxicUser123", avatar_color: "#ff0000", keywords: ["chief","trapped","ban"], required_matches: 2, explanation: "Ping senior staff immediately" },
-          { id: 8, user_message: "i make youtube videos, can i join content team?", username: "ContentCreatorYT", avatar_color: "#ff0000", keywords: ["social","links","contentdep"], required_matches: 2, explanation: "Ask for social links and ping contentdep" }
+          { id: 1, user_message: "hey i wanna join void esports, what do i need to do?", username: "FortnitePlayer23", avatar_color: "#5865f2", keywords: ["age","roster","requirement"], required_matches: 2, explanation: "Ask for age and direct to #how-to-join-roster", order: 0, enabled: true },
+          { id: 2, user_message: "i want to join as a pro player, i have earnings", username: "CompPlayer99", avatar_color: "#ed4245", keywords: ["tracker","earnings","ping"], required_matches: 2, explanation: "Ask for tracker and ping @trapped", order: 1, enabled: true },
+          { id: 3, user_message: "looking to join creative roster, i have clips", username: "CreativeBuilder", avatar_color: "#3ba55c", keywords: ["clip","freebuilding","ping"], required_matches: 2, explanation: "Ask for at least 2 clips", order: 2, enabled: true },
+          { id: 4, user_message: "can i join academy? i have 5k PR", username: "AcademyGrinder", avatar_color: "#f59e0b", keywords: ["tracker","username","team.void"], required_matches: 2, explanation: "Ask for tracker and username change", order: 3, enabled: true },
+          { id: 5, user_message: "im 14 is that old enough?", username: "YoungPlayer14", avatar_color: "#9146ff", keywords: ["chief","trapped","ping"], required_matches: 2, explanation: "Ping senior staff for verification", order: 4, enabled: true },
+          { id: 6, user_message: "i wanna be a void grinder, what's required?", username: "GrinderAccount", avatar_color: "#1da1f2", keywords: ["username","team.void","proof"], required_matches: 2, explanation: "Ask for username change and proof", order: 5, enabled: true },
+          { id: 7, user_message: "this server is trash, gonna report it all", username: "ToxicUser123", avatar_color: "#ff0000", keywords: ["chief","trapped","ban"], required_matches: 2, explanation: "Ping senior staff immediately", order: 6, enabled: true },
+          { id: 8, user_message: "i make youtube videos, can i join content team?", username: "ContentCreatorYT", avatar_color: "#ff0000", keywords: ["social","links","contentdep"], required_matches: 2, explanation: "Ask for social links and ping contentdep", order: 7, enabled: true }
         ]
       });
     }
@@ -1828,10 +1836,47 @@ router.get("/api/test-questions", requireAdmin, async (req, res) => {
   }
 });
 
+// Get active test questions (for frontend - only enabled, ordered) - NO AUTH REQUIRED
+router.get("/api/test-questions/active", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("test_questions")
+      .select("*")
+      .eq("enabled", true)
+      .order("order", { ascending: true })
+      .order("id", { ascending: true });
+    
+    if (error) {
+      logger.warn("Active test questions error:", error.message);
+      // Return empty array if DB fails - frontend will use defaults
+      return res.json({ success: true, questions: [] });
+    }
+    
+    res.json({ success: true, questions: data || [] });
+  } catch (err) {
+    logger.error("Get active test questions error:", err);
+    res.json({ success: true, questions: [] });
+  }
+});
+
 // Create test question
 router.post("/api/test-questions", requireAdmin, async (req, res) => {
   try {
-    const { user_message, username, avatar_color, keywords, required_matches, explanation } = req.body;
+    const { user_message, username, avatar_color, keywords, required_matches, explanation, order, enabled } = req.body;
+    
+    // Get max order if not provided
+    let questionOrder = order;
+    if (questionOrder === undefined || questionOrder === null) {
+      const { data: maxOrderData } = await supabase
+        .from("test_questions")
+        .select("order")
+        .order("order", { ascending: false })
+        .limit(1);
+      
+      questionOrder = maxOrderData && maxOrderData.length > 0 
+        ? (maxOrderData[0].order || 0) + 1 
+        : 0;
+    }
     
     const { data, error } = await supabase
       .from("test_questions")
@@ -1841,7 +1886,9 @@ router.post("/api/test-questions", requireAdmin, async (req, res) => {
         avatar_color: avatar_color || '#5865f2',
         keywords: keywords || [],
         required_matches: required_matches || 2,
-        explanation
+        explanation,
+        order: questionOrder,
+        enabled: enabled !== undefined ? enabled : true
       }])
       .select();
     
