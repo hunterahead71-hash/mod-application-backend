@@ -1593,33 +1593,14 @@ router.get("/conversation/:id", requireAdmin, async (req, res) => {
   }
 });
 
-// Accept endpoint
+// Accept endpoint - atomic update so only one accept (Discord or web) performs DM + role assign
 router.post("/accept/:id", requireAdmin, async (req, res) => {
   const appId = req.params.id;
   
   try {
     logger.info(`\n🔵 Accepting application ${appId}`);
     
-    const { data: application, error: fetchError } = await supabase
-      .from("applications")
-      .select("*")
-      .eq("id", appId)
-      .single();
-    
-    if (fetchError || !application) {
-      return res.status(404).json({ success: false, error: "Application not found" });
-    }
-
-    // Check if already processed
-    if (application.status !== 'pending') {
-      return res.status(400).json({ 
-        success: false, 
-        error: `Application already ${application.status} on ${new Date(application.reviewed_at).toLocaleString()}`
-      });
-    }
-    
-    // Update database
-    await supabase
+    const { data: application, error: updateError } = await supabase
       .from("applications")
       .update({ 
         status: "accepted",
@@ -1627,9 +1608,23 @@ router.post("/accept/:id", requireAdmin, async (req, res) => {
         reviewed_by: req.session.user.username,
         reviewed_at: new Date().toISOString()
       })
-      .eq("id", appId);
+      .eq("id", appId)
+      .eq("status", "pending")
+      .select()
+      .single();
     
-    // Try role assignment (background)
+    if (updateError || !application) {
+      const { data: existing } = await supabase.from("applications").select("status, reviewed_at").eq("id", appId).single();
+      if (existing?.status && existing.status !== "pending") {
+        return res.status(400).json({ 
+          success: false, 
+          error: `Application already ${existing.status} on ${new Date(existing.reviewed_at).toLocaleString()}`
+        });
+      }
+      return res.status(404).json({ success: false, error: "Application not found" });
+    }
+    
+    // Only this caller won the race - assign roles and send welcome DM once
     if (!isTestUser(application.discord_username, application.discord_id)) {
       setTimeout(async () => {
         try {

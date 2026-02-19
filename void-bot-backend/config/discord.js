@@ -298,23 +298,8 @@ client.on('interactionCreate', async (interaction) => {
 // ==================== ACCEPT HANDLER ====================
 async function handleAccept(interaction, appId, discordId, helpers) {
   try {
-    // Get application
+    // Atomic update: only one caller (Discord or web) wins - prevents double DM/role assign
     const { data: app, error } = await supabase
-      .from('applications')
-      .select('*')
-      .eq('id', appId)
-      .single();
-
-    if (error || !app) {
-      return interaction.editReply('❌ Application not found.');
-    }
-
-    if (app.status !== 'pending') {
-      return interaction.editReply(`❌ Already ${app.status}.`);
-    }
-
-    // Update database
-    await supabase
       .from('applications')
       .update({
         status: 'accepted',
@@ -322,7 +307,14 @@ async function handleAccept(interaction, appId, discordId, helpers) {
         reviewed_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .eq('id', appId);
+      .eq('id', appId)
+      .eq('status', 'pending')
+      .select()
+      .single();
+
+    if (error || !app) {
+      return interaction.editReply('❌ Application not found or already accepted.');
+    }
 
     // Update original message
     if (interaction.message?.embeds.length) {
