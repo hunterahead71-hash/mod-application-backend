@@ -15,28 +15,49 @@ async function safeLog(...args) {
 }
 
 // ==================== PERMISSION CHECK ====================
+// Fetches admin role IDs for a guild from DB (no hardcoded roles).
+async function getAdminRoleIdsForGuild(guildId) {
+  if (!guildId || !supabase) return [];
+  try {
+    const { data, error } = await supabase
+      .from('bot_admin_roles')
+      .select('role_id')
+      .eq('guild_id', guildId);
+    if (error) {
+      logger.warn('getAdminRoleIdsForGuild:', error.message);
+      return [];
+    }
+    return (data || []).map(r => r.role_id);
+  } catch (e) {
+    logger.warn('getAdminRoleIdsForGuild error:', e.message);
+    return [];
+  }
+}
+
 async function isAdmin(member) {
   if (!member) return false;
-  
-  // Check for specific admin role (1474083665293217914)
-  const ADMIN_ROLE_ID = '1474083665293217914';
-  if (member.roles.cache.has(ADMIN_ROLE_ID)) {
+  const guildId = member.guild?.id;
+  if (!guildId) return false;
+
+  // 1. Check database-configured admin roles (per-guild)
+  const dbAdminRoleIds = await getAdminRoleIdsForGuild(guildId);
+  if (dbAdminRoleIds.length > 0 && dbAdminRoleIds.some(roleId => member.roles.cache.has(roleId))) {
     return true;
   }
-  
-  // Also check if user has Administrator permission (fallback)
+
+  // 2. Server members with Administrator permission can always run admin commands (bootstrap)
   if (member.permissions.has(PermissionFlagsBits.Administrator)) {
     return true;
   }
-  
-  // Check for admin role IDs from env (comma-separated) as additional fallback
+
+  // 3. Optional env fallback: ADMIN_ROLE_IDS=id1,id2 (comma-separated)
   if (process.env.ADMIN_ROLE_IDS) {
-    const adminRoleIds = process.env.ADMIN_ROLE_IDS.split(',').map(id => id.trim());
-    if (adminRoleIds.some(roleId => member.roles.cache.has(roleId))) {
+    const envRoleIds = process.env.ADMIN_ROLE_IDS.split(',').map(id => id.trim());
+    if (envRoleIds.some(roleId => member.roles.cache.has(roleId))) {
       return true;
     }
   }
-  
+
   return false;
 }
 
@@ -1312,9 +1333,14 @@ const helpCommand = {
     // Help command is public - no admin check needed
     const embed = new EmbedBuilder()
       .setTitle('📚 Void Esports Certification Bot - Commands')
-      .setDescription('All commands require Administrator permission or admin role.')
+      .setDescription('Admin commands require Server Administrator permission or a role added via `/add-admin-role`.')
       .setColor(0x5865f2)
       .addFields(
+        {
+          name: '🛡️ Admin role (who can use bot admin commands)',
+          value: '`/show-admin-role` - Show current admin roles\n`/add-admin-role` - Add a role as admin\n`/delete-admin-role` - Remove a role from admin',
+          inline: false
+        },
         {
           name: '📝 Question Management',
           value: '`/test-question` - Manage test questions\n• `add` - Add new question\n• `edit` - Edit question\n• `delete` - Delete question\n• `list` - List all questions\n• `reorder` - Change order\n• `enable/disable` - Toggle question',
@@ -1514,6 +1540,172 @@ const dmTemplateCommand = {
   }
 };
 
+// ==================== ADMIN ROLE COMMANDS ====================
+const addAdminRoleCommand = {
+  data: new SlashCommandBuilder()
+    .setName('add-admin-role')
+    .setDescription('Add a Discord role that can use bot admin commands')
+    .addRoleOption(option =>
+      option.setName('role')
+        .setDescription('The role to grant admin access')
+        .setRequired(true)),
+
+  async execute(interaction) {
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    if (!alreadyDeferred) await interaction.deferReply({ ephemeral: true });
+
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ content: '❌ You do not have permission to use this command.' });
+    }
+
+    const role = interaction.options.getRole('role');
+    const guildId = interaction.guild?.id;
+    if (!guildId) return interaction.editReply({ content: '❌ Could not get guild.' });
+
+    try {
+      const { data: existing } = await supabase
+        .from('bot_admin_roles')
+        .select('id')
+        .eq('guild_id', guildId)
+        .eq('role_id', role.id)
+        .maybeSingle();
+
+      if (existing) {
+        return interaction.editReply({
+          content: `⚠️ **${role.name}** is already an admin role for this server.`
+        });
+      }
+
+      const { error } = await supabase
+        .from('bot_admin_roles')
+        .insert({
+          guild_id: guildId,
+          role_id: role.id,
+          role_name: role.name
+        });
+
+      if (error) {
+        logger.error('add-admin-role insert:', error);
+        return interaction.editReply({
+          content: `❌ Failed to add role: ${error.message}. Ensure the \`bot_admin_roles\` table exists (run Supabase migrations).`
+        });
+      }
+
+      await interaction.editReply({
+        content: `✅ **${role.name}** has been added as an admin role. Users with this role can use all bot admin commands.`
+      });
+    } catch (err) {
+      logger.error('add-admin-role error:', err);
+      await interaction.editReply({ content: `❌ Error: ${err.message}` });
+    }
+  }
+};
+
+const deleteAdminRoleCommand = {
+  data: new SlashCommandBuilder()
+    .setName('delete-admin-role')
+    .setDescription('Remove a role from bot admin access')
+    .addRoleOption(option =>
+      option.setName('role')
+        .setDescription('The role to remove from admin access')
+        .setRequired(true)),
+
+  async execute(interaction) {
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    if (!alreadyDeferred) await interaction.deferReply({ ephemeral: true });
+
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ content: '❌ You do not have permission to use this command.' });
+    }
+
+    const role = interaction.options.getRole('role');
+    const guildId = interaction.guild?.id;
+    if (!guildId) return interaction.editReply({ content: '❌ Could not get guild.' });
+
+    try {
+      const { data: deleted, error } = await supabase
+        .from('bot_admin_roles')
+        .delete()
+        .eq('guild_id', guildId)
+        .eq('role_id', role.id)
+        .select('id');
+
+      if (error) {
+        logger.error('delete-admin-role:', error);
+        return interaction.editReply({ content: `❌ Failed to remove role: ${error.message}` });
+      }
+
+      if (!deleted || deleted.length === 0) {
+        return interaction.editReply({
+          content: `⚠️ **${role.name}** is not configured as an admin role for this server. Use \`/show-admin-role\` to see current admin roles.`
+        });
+      }
+
+      await interaction.editReply({
+        content: `✅ **${role.name}** has been removed from admin roles.`
+      });
+    } catch (err) {
+      logger.error('delete-admin-role error:', err);
+      await interaction.editReply({ content: `❌ Error: ${err.message}` });
+    }
+  }
+};
+
+const showAdminRoleCommand = {
+  data: new SlashCommandBuilder()
+    .setName('show-admin-role')
+    .setDescription('Show which roles have bot admin access for this server'),
+
+  async execute(interaction) {
+    const alreadyDeferred = interaction.deferred || interaction.replied;
+    if (!alreadyDeferred) await interaction.deferReply({ ephemeral: true });
+
+    if (!await isAdmin(interaction.member)) {
+      return interaction.editReply({ content: '❌ You do not have permission to use this command.' });
+    }
+
+    const guildId = interaction.guild?.id;
+    if (!guildId) return interaction.editReply({ content: '❌ Could not get guild.' });
+
+    try {
+      const { data: rows, error } = await supabase
+        .from('bot_admin_roles')
+        .select('role_id, role_name, created_at')
+        .eq('guild_id', guildId)
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        logger.error('show-admin-role:', error);
+        return interaction.editReply({
+          content: `❌ Could not load admin roles: ${error.message}. Ensure the \`bot_admin_roles\` table exists.`
+        });
+      }
+
+      const embed = new EmbedBuilder()
+        .setTitle('🛡️ Bot admin roles (this server)')
+        .setDescription('These Discord roles can use all certification bot admin commands.')
+        .setColor(0x5865f2)
+        .setFooter({ text: 'Add: /add-admin-role • Remove: /delete-admin-role' })
+        .setTimestamp();
+
+      if (!rows || rows.length === 0) {
+        embed.addFields({
+          name: 'No admin roles configured',
+          value: 'Only **Server Administrators** (Discord permission) and optional **ADMIN_ROLE_IDS** env roles can use admin commands.\n\nUse `/add-admin-role` to add a role.'
+        });
+      } else {
+        const list = rows.map((r, i) => `${i + 1}. <@&${r.role_id}> (\`${r.role_id}\`)`).join('\n');
+        embed.addFields({ name: `Roles (${rows.length})`, value: list, inline: false });
+      }
+
+      await interaction.editReply({ embeds: [embed] });
+    } catch (err) {
+      logger.error('show-admin-role error:', err);
+      await interaction.editReply({ content: `❌ Error: ${err.message}` });
+    }
+  }
+};
+
 module.exports = {
   testQuestionCommand,
   certRoleCommand,
@@ -1524,5 +1716,8 @@ module.exports = {
   quickActionsCommand,
   botStatusCommand,
   helpCommand,
-  dmTemplateCommand
+  dmTemplateCommand,
+  addAdminRoleCommand,
+  deleteAdminRoleCommand,
+  showAdminRoleCommand
 };

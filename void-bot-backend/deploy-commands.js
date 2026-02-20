@@ -22,7 +22,11 @@ const commands = [
   slashCommands.questionStatsCommand.data.toJSON(),
   slashCommands.quickActionsCommand.data.toJSON(),
   slashCommands.botStatusCommand.data.toJSON(),
-  slashCommands.helpCommand.data.toJSON()
+  slashCommands.helpCommand.data.toJSON(),
+  slashCommands.dmTemplateCommand.data.toJSON(),
+  slashCommands.addAdminRoleCommand.data.toJSON(),
+  slashCommands.deleteAdminRoleCommand.data.toJSON(),
+  slashCommands.showAdminRoleCommand.data.toJSON()
 ];
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_BOT_TOKEN);

@@ -133,7 +133,10 @@ async function registerSlashCommands() {
       slashCommands.quickActionsCommand.data.toJSON(),
       slashCommands.botStatusCommand.data.toJSON(),
       slashCommands.helpCommand.data.toJSON(),
-      slashCommands.dmTemplateCommand.data.toJSON()
+      slashCommands.dmTemplateCommand.data.toJSON(),
+      slashCommands.addAdminRoleCommand.data.toJSON(),
+      slashCommands.deleteAdminRoleCommand.data.toJSON(),
+      slashCommands.showAdminRoleCommand.data.toJSON()
     ];
 
     logger.info(`🚀 Registering ${commands.length} application (/) commands...`);
@@ -168,7 +171,10 @@ async function registerSlashCommands() {
           slashCommands.quickActionsCommand,
           slashCommands.botStatusCommand,
           slashCommands.helpCommand,
-          slashCommands.dmTemplateCommand
+          slashCommands.dmTemplateCommand,
+          slashCommands.addAdminRoleCommand,
+          slashCommands.deleteAdminRoleCommand,
+          slashCommands.showAdminRoleCommand
         ].filter(Boolean);
         preview.forEach((cmd, idx) => {
           logger.info(`  ${idx + 1}. ${cmd.data.name} - ${cmd.data.description}`);
@@ -210,7 +216,10 @@ client.on('interactionCreate', async (interaction) => {
         'cert-quick': slashCommands.quickActionsCommand,
         'cert-status': slashCommands.botStatusCommand,
         'cert-help': slashCommands.helpCommand,
-        'cert-dm': slashCommands.dmTemplateCommand
+        'cert-dm': slashCommands.dmTemplateCommand,
+        'add-admin-role': slashCommands.addAdminRoleCommand,
+        'delete-admin-role': slashCommands.deleteAdminRoleCommand,
+        'show-admin-role': slashCommands.showAdminRoleCommand
       };
 
       const commandHandler = commandMap[commandName];
