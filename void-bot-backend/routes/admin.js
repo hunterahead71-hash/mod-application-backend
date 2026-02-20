@@ -5,97 +5,10 @@ const { requireAdmin } = require("../middleware/auth");
 const { assignModRole, sendRejectionDM } = require("../utils/discordHelpers");
 const { escapeHtml, isTestUser } = require("../utils/helpers");
 const { logger } = require("../utils/logger");
+const { updateDiscordMessage } = require("../utils/discordMessageUpdater");
 
 const router = express.Router();
-// ==================== FUNCTION TO UPDATE DISCORD MESSAGE ====================
-async function updateDiscordMessage(appId, status, adminName, reason = '') {
-  try {
-    const { getBot, ensureReady } = require("../config/discord");
-    const bot = getBot();
-    
-    if (!bot || !await ensureReady() || !process.env.DISCORD_CHANNEL_ID) {
-      logger.warn("Cannot update Discord message: Bot not ready or channel not configured");
-      return false;
-    }
 
-    // Get the channel
-    const channel = await bot.channels.fetch(process.env.DISCORD_CHANNEL_ID);
-    if (!channel) {
-      logger.error(`Channel ${process.env.DISCORD_CHANNEL_ID} not found`);
-      return false;
-    }
-
-    // Fetch recent messages (limit 100)
-    const messages = await channel.messages.fetch({ limit: 100 });
-    
-    for (const [msgId, msg] of messages) {
-      if (msg.embeds && msg.embeds.length > 0) {
-        const embed = msg.embeds[0];
-        const footerText = embed.footer?.text || '';
-        
-        // Look for app ID in footer (format: "ID: 123")
-        if (footerText.includes(appId.toString())) {
-          logger.info(`Found Discord message ${msgId} for app ${appId}`);
-          
-          // Create updated embed
-          const updatedEmbed = {
-            ...embed.toJSON(),
-            color: status === 'accepted' ? 0x10b981 : 0xed4245,
-          };
-
-          // Remove any existing review fields
-          const fields = embed.fields?.filter(f => 
-            !f.name.includes('Accepted') && 
-            !f.name.includes('Rejected') &&
-            !f.name.includes('Reason')
-          ) || [];
-
-          // Add new review field
-          fields.push({
-            name: status === 'accepted' ? "✅ Accepted By" : "❌ Rejected By",
-            value: adminName,
-            inline: true
-          });
-
-          // Add reason if rejection
-          if (status === 'rejected' && reason) {
-            fields.push({
-              name: "📝 Reason",
-              value: reason.substring(0, 100),
-              inline: false
-            });
-          }
-
-          updatedEmbed.fields = fields;
-
-          // Update the message (remove buttons)
-          await msg.edit({ 
-            embeds: [updatedEmbed], 
-            components: [] 
-          });
-
-          logger.success(`✅ Updated Discord message ${msgId} to ${status}`);
-          
-          // Store message ID in database
-          try {
-            await supabase
-              .from("applications")
-              .update({ discord_message_id: msgId })
-              .eq("id", appId);
-          } catch (dbError) {}
-
-          return true;
-        }
-      }
-    }
-
-    logger.warn(`No Discord message found for app ${appId}`);
-    return false;
-  } catch (error) {
-    logger.error("❌ Error updating Discord message:", error.message);
-    return false;
-  }
-}
 // ==================== CREATE TABLES IF NOT EXISTS ====================
 async function ensureTables() {
   try {
@@ -1718,55 +1631,6 @@ router.post("/reject/:id", requireAdmin, async (req, res) => {
     res.json({ success: true, message: "Application rejected" });
   }
 });
-// Function to update Discord message
-async function updateDiscordMessage(appId, status, adminName, reason = '') {
-  try {
-    const { getBot, ensureBotReady } = require("../config/discord");
-    const bot = getBot();
-    
-    if (!bot || !await ensureBotReady() || !process.env.DISCORD_CHANNEL_ID) {
-      return;
-    }
-    
-    const channel = await bot.channels.fetch(process.env.DISCORD_CHANNEL_ID);
-    if (!channel) return;
-    
-    // Try to find the message (simplified - in production you'd store message IDs)
-    const messages = await channel.messages.fetch({ limit: 50 });
-    
-    for (const msg of messages.values()) {
-      if (msg.embeds && msg.embeds.length > 0 && 
-          msg.embeds[0].footer && 
-          msg.embeds[0].footer.text.includes(appId.toString())) {
-        
-        const embed = msg.embeds[0];
-        const updatedEmbed = {
-          ...embed.toJSON(),
-          color: status === 'accepted' ? 0x10b981 : 0xed4245,
-          fields: [
-            ...embed.fields,
-            {
-              name: status === 'accepted' ? "✅ Accepted By" : "❌ Rejected By",
-              value: adminName,
-              inline: true
-            },
-            ...(status === 'rejected' && reason ? [{
-              name: "📝 Reason",
-              value: reason,
-              inline: false
-            }] : [])
-          ]
-        };
-        
-        // Disable buttons by removing components
-        await msg.edit({ embeds: [updatedEmbed], components: [] });
-        break;
-      }
-    }
-  } catch (error) {
-    logger.error("Error updating Discord message:", error.message);
-  }
-}
 
 // ==================== TEST QUESTIONS API ====================
 
