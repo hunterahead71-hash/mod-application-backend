@@ -143,12 +143,23 @@ async function registerSlashCommands() {
 
     let data;
     if (process.env.DISCORD_CLIENT_ID) {
-      // Register globally (takes up to 1 hour to propagate)
-      data = await rest.put(
-        Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
-        { body: commands }
-      );
-      logger.success(`✅ Successfully registered ${data.length} global commands`);
+      // Use same target as deploy-commands.js to avoid duplicates: guild if set, else global
+      if (process.env.DISCORD_GUILD_ID) {
+        data = await rest.put(
+          Routes.applicationGuildCommands(process.env.DISCORD_CLIENT_ID, process.env.DISCORD_GUILD_ID),
+          { body: commands }
+        );
+        logger.success(`✅ Successfully registered ${data.length} guild commands`);
+        // Clear global commands so only guild commands show (prevents duplicate list)
+        await rest.put(Routes.applicationCommands(process.env.DISCORD_CLIENT_ID), { body: [] });
+        logger.info(`🧹 Cleared global commands to prevent duplicates`);
+      } else {
+        data = await rest.put(
+          Routes.applicationCommands(process.env.DISCORD_CLIENT_ID),
+          { body: commands }
+        );
+        logger.success(`✅ Successfully registered ${data.length} global commands`);
+      }
     } else {
       logger.warn("⚠️ DISCORD_CLIENT_ID not set - cannot register commands");
     }
